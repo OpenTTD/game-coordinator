@@ -1,0 +1,6 @@
+aiohttp
+aioredis
+click
+sentry-sdk
+openttd-helpers
+openttd-protocol
