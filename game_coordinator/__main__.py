@@ -10,6 +10,7 @@ from openttd_protocol.protocol.coordinator import CoordinatorProtocol
 
 from .application.coordinator import Application as CoordinatorApplication
 from .database.redis import click_database_redis
+from .web import start_webserver
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ async def run_server(application, bind, port, ProtocolClass):
     "--bind", help="The IP to bind the server to", multiple=True, default=["::1", "127.0.0.1"], show_default=True
 )
 @click.option("--coordinator-port", help="Port of the Game Coordinator", default=3976, show_default=True)
+@click.option("--web-port", help="Port of the web server.", default=80, show_default=True, metavar="PORT")
 @click.option(
     "--db",
     type=click.Choice(["redis"], case_sensitive=False),
@@ -43,7 +45,7 @@ async def run_server(application, bind, port, ProtocolClass):
     callback=click_helper.import_module("game_coordinator.database", "Database"),
 )
 @click_database_redis
-def main(bind, coordinator_port, db):
+def main(bind, coordinator_port, web_port, db):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
@@ -54,7 +56,7 @@ def main(bind, coordinator_port, db):
     server = loop.run_until_complete(run_server(app_instance, bind, coordinator_port, CoordinatorProtocol))
 
     try:
-        loop.run_until_complete(server.serve_forever())
+        start_webserver(bind, web_port)
     except KeyboardInterrupt:
         pass
 
