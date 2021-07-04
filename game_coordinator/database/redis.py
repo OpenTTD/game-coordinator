@@ -5,6 +5,8 @@ import json
 import logging
 import time
 
+from aioredis import ResponseError
+
 from openttd_helpers import click_helper
 
 log = logging.getLogger(__name__)
@@ -69,7 +71,10 @@ class Database:
                 raise Exception("We were about to lose our GC-id, so we crash instead.")
 
     async def _monitor_expire(self):
-        await self._redis.config_set("notify-keyspace-events", "Ex")
+        try:
+            await self._redis.config_set("notify-keyspace-events", "Ex")
+        except ResponseError:
+            log.warning("Couldn't set configuration setting 'notify-keyspace-events' to 'Ex'. Please do this manually.")
 
         channel = self._redis.pubsub()
         await channel.subscribe("__keyevent@0__:expired")
