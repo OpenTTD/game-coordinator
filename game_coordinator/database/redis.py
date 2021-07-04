@@ -68,8 +68,6 @@ class Database:
             if time.time() - last_time > 50:
                 raise Exception("We were about to lose our GC-id, so we crash instead.")
 
-            print(self.application._servers)
-
     async def _monitor_expire(self):
         await self._redis.config_set("notify-keyspace-events", "Ex")
 
