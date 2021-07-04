@@ -44,14 +44,22 @@ async def run_server(application, bind, port, ProtocolClass):
     required=True,
     callback=click_helper.import_module("game_coordinator.database", "Database"),
 )
+@click.option(
+    "--proxy-protocol",
+    help="Enable Proxy Protocol (v1), and expect all incoming streams to have this header "
+    "(HINT: for nginx, configure proxy_requests to 1).",
+    is_flag=True,
+)
 @click_database_redis
-def main(bind, coordinator_port, web_port, db):
+def main(bind, coordinator_port, web_port, db, proxy_protocol):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
     loop.run_until_complete(db_instance.startup())
 
     app_instance = CoordinatorApplication(db_instance)
+
+    CoordinatorProtocol.proxy_protocol = proxy_protocol
 
     server = loop.run_until_complete(run_server(app_instance, bind, coordinator_port, CoordinatorProtocol))
 
