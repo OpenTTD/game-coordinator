@@ -9,6 +9,7 @@ from openttd_helpers.sentry_helper import click_sentry
 from openttd_protocol.protocol.coordinator import CoordinatorProtocol
 
 from .application.coordinator import Application as CoordinatorApplication
+from .database.redis import click_database_redis
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ async def run_server(application, bind, port, ProtocolClass):
     required=True,
     callback=click_helper.import_module("game_coordinator.database", "Database"),
 )
+@click_database_redis
 def main(bind, coordinator_port, db):
     loop = asyncio.get_event_loop()
 

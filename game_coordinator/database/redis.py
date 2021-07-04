@@ -1,10 +1,15 @@
 import asyncio
 import aioredis
+import click
 import json
 import logging
 import time
 
+from openttd_helpers import click_helper
+
 log = logging.getLogger(__name__)
+
+_redis_url = None
 
 
 class Database:
@@ -14,7 +19,7 @@ class Database:
         # Set by startup() on start-up.
         self.gc_id = None
 
-        self._redis = aioredis.from_url("redis://localhost", decode_responses=True)
+        self._redis = aioredis.from_url(_redis_url, decode_responses=True)
 
     async def startup(self):
         # Check with redis if any of the keys are available.
@@ -129,3 +134,15 @@ class Database:
     async def server_offline(self, server_id):
         await self._redis.delete(f"gc-server:{server_id}")
         await self._redis.xadd("gc-stream", {"gc-id": self._gc_id, "delete": server_id}, approximate=1000)
+
+
+@click_helper.extend
+@click.option(
+    "--redis-url",
+    help="URL of the redis server.",
+    default="redis://localhost",
+)
+def click_database_redis(redis_url):
+    global _redis_url
+
+    _redis_url = redis_url
