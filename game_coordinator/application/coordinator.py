@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from openttd_protocol.protocol.coordinator import ConnectionType
+
 from .helpers.server import (
     Server,
     ServerExternal,
@@ -18,25 +20,40 @@ class Application:
 
     def disconnect(self, source):
         if hasattr(source, "server"):
-            self.remove_server(source.server.connection_string)
+            self.remove_server(source.server.server_id)
 
-    async def update_external_server(self, connection_string, info):
-        if connection_string not in self._servers:
-            self._servers[connection_string] = ServerExternal(connection_string, info)
+    async def update_external_server(self, server_id, info):
+        if server_id not in self._servers:
+            self._servers[server_id] = ServerExternal(server_id, info["game_type"])
+
+        if not isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: update_external_server() called on a server managed by us")
             return
 
-        await self._servers[connection_string].update(info)
+        await self._servers[server_id].update(info)
 
-    def remove_server(self, connection_string):
-        if connection_string not in self._servers:
+    async def update_external_direct_ip(self, ip_type, server_id, server):
+        if server_id not in self._servers:
             return
 
-        asyncio.create_task(self._servers[connection_string].disconnect())
-        del self._servers[connection_string]
+        if not isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: update_external_direct_ip() called on a server managed by us")
+            return
+
+        await self._servers[server_id].update_direct_ip(ip_type, server)
+
+    def remove_server(self, server_id):
+        if server_id not in self._servers:
+            return
+
+        asyncio.create_task(self._servers[server_id].disconnect())
+        del self._servers[server_id]
 
     async def receive_PACKET_COORDINATOR_CLIENT_REGISTER(self, source, protocol_version, game_type, server_port):
-        source.server = Server(self, source, game_type, server_port)
-        self._servers[source.server.connection_string] = source.server
+        server_id = f"{str(source.ip)}:{server_port}"
+
+        source.server = Server(self, server_id, game_type, source, server_port)
+        self._servers[source.server.server_id] = source.server
         await source.server.detect_connection()
 
     async def receive_PACKET_COORDINATOR_CLIENT_UPDATE(self, source, protocol_version, **info):
@@ -49,6 +66,10 @@ class Application:
         servers_match = []
         servers_other = []
         for server in self._servers.values():
+            # Servers that are not reachable shouldn't be listed.
+            if server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
+                continue
+
             if server.info["openttd_version"] == openttd_version:
                 servers_match.append(server)
             else:
