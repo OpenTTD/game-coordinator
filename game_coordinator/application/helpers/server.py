@@ -91,5 +91,5 @@ class Server:
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
             pass
 
-        await self._source.protocol.send_PACKET_COORDINATOR_SERVER_REGISTER_ACK(connection_type=self.connection_type)
+        await self._source.protocol.send_PACKET_COORDINATOR_GC_REGISTER_ACK(connection_type=self.connection_type)
         self._task = None
