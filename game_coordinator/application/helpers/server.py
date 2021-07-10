@@ -3,6 +3,7 @@ import logging
 
 from openttd_protocol.wire.exceptions import SocketClosed
 from openttd_protocol.protocol.coordinator import ConnectionType
+from openttd_protocol.protocol.game import GameProtocol
 
 log = logging.getLogger(__name__)
 
@@ -80,16 +81,42 @@ class Server:
 
     async def _real_start_detection(self):
         try:
-            await asyncio.wait_for(
-                asyncio.get_event_loop().create_connection(
-                    lambda: ConnectAndCloseProtocol(), host=str(self._source.ip), port=self._server_port
-                ),
-                1,
-            )
+            await asyncio.wait_for(self._create_connection(self._source.ip, self._server_port), 1)
             await self._application.database.direct_ip(self.server_id, self._source.ip, self._server_port)
             self.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
+            # These all indicate a connection could not be created, so the server is not reachable.
             pass
 
         await self._source.protocol.send_PACKET_COORDINATOR_GC_REGISTER_ACK(connection_type=self.connection_type)
         self._task = None
+
+    async def _create_connection(self, server_ip, server_port):
+        connected = asyncio.Event()
+
+        server = await asyncio.get_event_loop().create_connection(
+            lambda: GameProtocol(DetectGame(connected)),
+            host=str(server_ip),
+            port=server_port,
+        )
+
+        try:
+            # Wait for a signal we exchanged GAME_INFO packets.
+            await connected.wait()
+        finally:
+            # Make sure to never leave with the connection open.
+            server[0].close()
+
+
+class DetectGame:
+    def __init__(self, connected):
+        self._connected = connected
+
+    def connected(self, source):
+        asyncio.create_task(source.protocol.send_PACKET_CLIENT_GAME_INFO())
+
+    async def receive_PACKET_SERVER_GAME_INFO(self, source, **info):
+        source.protocol.transport.close()
+
+        # Inform caller that we have successful connected to the valid server.
+        self._connected.set()
