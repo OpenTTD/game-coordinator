@@ -61,6 +61,7 @@ class Server:
     async def update(self, info):
         self.info = info
         self.info["game_type"] = self.game_type.value
+        self.info["connection_type"] = self.connection_type.value
 
         await self._application.database.update_info(self.server_id, self.info)
 
