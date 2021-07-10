@@ -51,7 +51,7 @@ class Application:
         asyncio.create_task(self._servers[server_id].disconnect())
         del self._servers[server_id]
 
-    async def receive_PACKET_COORDINATOR_CLIENT_REGISTER(self, source, protocol_version, game_type, server_port):
+    async def receive_PACKET_COORDINATOR_SERVER_REGISTER(self, source, protocol_version, game_type, server_port):
         if isinstance(source.ip, ipaddress.IPv6Address):
             server_id_str = f"[{source.ip}]:{server_port}"
         else:
@@ -63,7 +63,7 @@ class Application:
         self._servers[source.server.server_id] = source.server
         await source.server.detect_connection()
 
-    async def receive_PACKET_COORDINATOR_CLIENT_UPDATE(self, source, protocol_version, **info):
+    async def receive_PACKET_COORDINATOR_SERVER_UPDATE(self, source, protocol_version, **info):
         await source.server.update(info)
 
     async def receive_PACKET_COORDINATOR_CLIENT_LISTING(
@@ -82,4 +82,4 @@ class Application:
             else:
                 servers_other.append(server)
 
-        await source.protocol.send_PACKET_COORDINATOR_SERVER_LISTING(game_info_version, servers_match + servers_other)
+        await source.protocol.send_PACKET_COORDINATOR_GC_LISTING(game_info_version, servers_match + servers_other)
