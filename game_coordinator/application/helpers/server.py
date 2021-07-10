@@ -88,7 +88,7 @@ class Server:
             await self._application.database.direct_ip(self.server_id, self._source.ip, self._server_port)
             self.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
-            return
+            pass
 
         await self._source.protocol.send_PACKET_COORDINATOR_SERVER_REGISTER_ACK(connection_type=self.connection_type)
         self._task = None
