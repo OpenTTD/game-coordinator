@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import ipaddress
 import logging
 
 from openttd_protocol.protocol.coordinator import ConnectionType
@@ -50,7 +52,12 @@ class Application:
         del self._servers[server_id]
 
     async def receive_PACKET_COORDINATOR_CLIENT_REGISTER(self, source, protocol_version, game_type, server_port):
-        server_id = f"{str(source.ip)}:{server_port}"
+        if isinstance(source.ip, ipaddress.IPv6Address):
+            server_id_str = f"[{source.ip}]:{server_port}"
+        else:
+            server_id_str = f"{source.ip}:{server_port}"
+
+        server_id = hashlib.md5(server_id_str.encode()).digest().hex()
 
         source.server = Server(self, server_id, game_type, source, server_port)
         self._servers[source.server.server_id] = source.server
