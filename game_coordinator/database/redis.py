@@ -91,7 +91,7 @@ class Database:
                     await self._redis.delete(f"gc-direct-ipv4:{server_id}")
                     await self._redis.delete(f"gc-direct-ipv6:{server_id}")
 
-                    await self.application.remove_server(server_id)
+                    self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
         servers = await self._redis.keys("gc-server:*")
