@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import pproxy
 
 from openttd_protocol.wire.exceptions import SocketClosed
 from openttd_protocol.protocol.coordinator import ConnectionType
@@ -94,11 +95,22 @@ class Server:
     async def _create_connection(self, server_ip, server_port):
         connected = asyncio.Event()
 
-        server = await asyncio.get_event_loop().create_connection(
-            lambda: GameProtocol(DetectGame(connected)),
-            host=str(server_ip),
-            port=server_port,
-        )
+        if self._application.socks_proxy:
+            socks_conn = pproxy.Connection(self._application.socks_proxy)
+            _, writer = await socks_conn.tcp_connect(str(server_ip), server_port)
+
+            # Hand over the socket to our own Protocol.
+            sock = writer.transport.get_extra_info("socket")
+            server = await asyncio.get_event_loop().create_connection(
+                lambda: GameProtocol(DetectGame(connected)),
+                sock=sock,
+            )
+        else:
+            server = await asyncio.get_event_loop().create_connection(
+                lambda: GameProtocol(DetectGame(connected)),
+                host=str(server_ip),
+                port=server_port,
+            )
 
         try:
             # Wait for a signal we exchanged GAME_INFO packets.

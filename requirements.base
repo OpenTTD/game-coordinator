@@ -4,3 +4,4 @@ click
 sentry-sdk
 openttd-helpers
 openttd-protocol
+pproxy

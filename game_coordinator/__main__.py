@@ -50,14 +50,18 @@ async def run_server(application, bind, port, ProtocolClass):
     "(HINT: for nginx, configure proxy_requests to 1).",
     is_flag=True,
 )
+@click.option(
+    "--socks-proxy",
+    help="Use a SOCKS proxy to query game servers.",
+)
 @click_database_redis
-def main(bind, coordinator_port, web_port, db, proxy_protocol):
+def main(bind, coordinator_port, web_port, db, proxy_protocol, socks_proxy):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
     loop.run_until_complete(db_instance.startup())
 
-    app_instance = CoordinatorApplication(db_instance)
+    app_instance = CoordinatorApplication(db_instance, socks_proxy)
 
     CoordinatorProtocol.proxy_protocol = proxy_protocol
 
