@@ -14,8 +14,9 @@ log = logging.getLogger(__name__)
 
 
 class Application:
-    def __init__(self, database):
+    def __init__(self, database, socks_proxy):
         self.database = database
+        self.socks_proxy = socks_proxy
         self._servers = {}
 
         self.database.application = self
