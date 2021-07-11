@@ -162,6 +162,9 @@ class Database:
 
                 log.error("Internal error: saw invalid entry on stream: %s", entry)
 
+    def get_server_id(self):
+        return int(self._gc_id)
+
     async def update_info(self, server_id, info):
         info_str = json.dumps(info)
         await self._redis.set(f"gc-server:{server_id}", info_str, ex=60)
