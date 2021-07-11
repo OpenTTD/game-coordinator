@@ -38,6 +38,7 @@ async def run_server(application, bind, port, ProtocolClass):
 )
 @click.option("--coordinator-port", help="Port of the Game Coordinator", default=3976, show_default=True)
 @click.option("--web-port", help="Port of the web server.", default=80, show_default=True, metavar="PORT")
+@click.option("--shared-secret", help="Shared secret to validate invite-code-secrets with", required=True)
 @click.option(
     "--db",
     type=click.Choice(["redis"], case_sensitive=False),
@@ -55,13 +56,13 @@ async def run_server(application, bind, port, ProtocolClass):
     help="Use a SOCKS proxy to query game servers.",
 )
 @click_database_redis
-def main(bind, coordinator_port, web_port, db, proxy_protocol, socks_proxy):
+def main(bind, coordinator_port, web_port, shared_secret, db, proxy_protocol, socks_proxy):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
     loop.run_until_complete(db_instance.startup())
 
-    app_instance = CoordinatorApplication(db_instance, socks_proxy)
+    app_instance = CoordinatorApplication(shared_secret, db_instance, socks_proxy)
 
     CoordinatorProtocol.proxy_protocol = proxy_protocol
 
