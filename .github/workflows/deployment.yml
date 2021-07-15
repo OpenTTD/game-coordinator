@@ -18,13 +18,21 @@ jobs:
         state: in_progress
         description: "Deployment of ${{ github.event.deployment.payload.version }} to ${{ github.event.deployment.environment }} started"
 
-    - name: Deploy on AWS
+    - name: Deploy on AWS (GameCoordinator)
       uses: openttd/actions/deploy-aws@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-region: ${{ secrets.AWS_REGION }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         name: GameCoordinator
+
+    - name: Deploy on AWS (StunServer)
+      uses: openttd/actions/deploy-aws@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        name: StunServer
 
     - if: success()
       name: Deployment successful
