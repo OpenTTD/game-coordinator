@@ -64,8 +64,8 @@ class TokenVerify:
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
 
             # Record the direct-ip in various of places.
-            server_ip = f"[{self._source.ip}]" if isinstance(peer_ip, ipaddress.IPv6Address) else str(peer_ip)
-            self._server.direct_ips.append({"ip": server_ip, "port": peer_port})
+            peer_ip_str = f"[{peer_ip}]" if isinstance(peer_ip, ipaddress.IPv6Address) else str(peer_ip)
+            self._server.direct_ips.append({"ip": peer_ip_str, "port": peer_port})
             await self._application.database.direct_ip(self._server.server_id, peer_ip, peer_port)
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
             # These all indicate a connection could not be created, so the server is not reachable.
