@@ -178,12 +178,10 @@ class Database:
     async def direct_ip(self, server_id, server_ip, server_port):
         # Keep track of the IP this server has.
         type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
-        if (
-            await self._redis.set(
-                f"gc-direct-{type}:{server_id}", json.dumps({"ip": str(server_ip), "port": server_port})
-            )
-            > 0
-        ):
+        res = await self._redis.set(
+            f"gc-direct-{type}:{server_id}", json.dumps({"ip": str(server_ip), "port": server_port})
+        )
+        if res > 0:
             await self.add_to_stream(
                 "new-direct-ip", {"server_id": server_id, "type": type, "ip": str(server_ip), "port": server_port}
             )
