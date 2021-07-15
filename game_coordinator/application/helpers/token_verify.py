@@ -37,7 +37,7 @@ class TokenVerify:
         self._pending_detection_tasks = []
 
         if self._protocol_version == 2:
-            task = asyncio.create_task(self._start_detection(self._source.ip, self._server.server_port))
+            task = asyncio.create_task(self._start_detection(self._source.ip))
             self._pending_detection_tasks.append(task)
         else:
             await self._source.protocol.send_PACKET_COORDINATOR_GC_STUN_REQUEST(
@@ -53,20 +53,20 @@ class TokenVerify:
         if self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_STUN
 
-        task = asyncio.create_task(self._start_detection(peer_ip, peer_port))
+        task = asyncio.create_task(self._start_detection(peer_ip))
         self._pending_detection_tasks.append(task)
 
-    async def _start_detection(self, peer_ip, peer_port):
+    async def _start_detection(self, server_ip):
         try:
-            await asyncio.wait_for(self._create_connection(peer_ip, peer_port), 1)
+            await asyncio.wait_for(self._create_connection(server_ip, self._server.server_port), 1)
 
             # We found a direct-ip to connect to. That is always the better one to use.
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
 
             # Record the direct-ip in various of places.
-            peer_ip_str = f"[{peer_ip}]" if isinstance(peer_ip, ipaddress.IPv6Address) else str(peer_ip)
-            self._server.direct_ips.append({"ip": peer_ip_str, "port": peer_port})
-            await self._application.database.direct_ip(self._server.server_id, peer_ip, peer_port)
+            server_ip_str = f"[{server_ip}]" if isinstance(server_ip, ipaddress.IPv6Address) else str(server_ip)
+            self._server.direct_ips.append({"ip": server_ip_str, "port": self._server.server_port})
+            await self._application.database.direct_ip(self._server.server_id, server_ip, self._server.server_port)
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
             # These all indicate a connection could not be created, so the server is not reachable.
             pass
