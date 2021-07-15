@@ -34,4 +34,4 @@ RUN pip freeze 2>/dev/null > requirements.installed \
 COPY game_coordinator /code/game_coordinator
 
 ENTRYPOINT ["python", "-m", "game_coordinator"]
-CMD ["--bind", "0.0.0.0", "--db", "redis"]
+CMD ["--app", "coordinator", "--bind", "0.0.0.0", "--db", "redis", "--redis-url", "redis://172.17.0.1", "--shared-secret", "test"]

@@ -17,12 +17,18 @@ from .helpers.server import (
     ServerExternal,
 )
 from .helpers.token_connect import TokenConnect
+from .helpers.token_verify import TokenVerify
 
 log = logging.getLogger(__name__)
 
 
 class Application:
-    def __init__(self, shared_secret, database, socks_proxy):
+    def __init__(self, database, shared_secret, socks_proxy):
+        if not shared_secret:
+            raise Exception("Please set a shared-secret for this application")
+
+        log.info("Starting Game Coordinator ...")
+
         self._shared_secret = shared_secret
         self.database = database
         self.socks_proxy = socks_proxy
@@ -31,16 +37,19 @@ class Application:
 
         self.database.application = self
 
+    async def startup(self):
+        await self.database.sync_and_monitor()
+
     def disconnect(self, source):
         if hasattr(source, "server"):
-            self.remove_server(source.server.server_id)
+            asyncio.create_task(self.remove_server(source.server.server_id))
 
     def delete_token(self, token):
         del self._tokens[token]
 
     async def update_external_server(self, server_id, info):
         if server_id not in self._servers:
-            self._servers[server_id] = ServerExternal(server_id)
+            self._servers[server_id] = ServerExternal(self, server_id)
 
         if not isinstance(self._servers[server_id], ServerExternal):
             log.error("Internal error: update_external_server() called on a server managed by us")
@@ -48,17 +57,59 @@ class Application:
 
         await self._servers[server_id].update(info)
 
-    async def update_external_direct_ip(self, ip_type, server_id, server):
+    async def update_external_direct_ip(self, server_id, type, ip, port):
         if server_id not in self._servers:
-            self._servers[server_id] = ServerExternal(server_id)
+            self._servers[server_id] = ServerExternal(self, server_id)
 
         if not isinstance(self._servers[server_id], ServerExternal):
             log.error("Internal error: update_external_direct_ip() called on a server managed by us")
             return
 
-        await self._servers[server_id].update_direct_ip(ip_type, server)
+        await self._servers[server_id].update_direct_ip(type, ip, port)
 
-    def remove_server(self, server_id):
+    async def send_server_stun_request(self, server_id, protocol_version, token):
+        if server_id not in self._servers:
+            return
+
+        if isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: server_stun_request() called on a server NOT managed by us")
+            return
+
+        await self._servers[server_id].send_stun_request(protocol_version, token)
+
+    async def send_server_stun_connect(
+        self, server_id, protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
+    ):
+        if server_id not in self._servers:
+            return
+
+        if isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: server_stun_connect() called on a server NOT managed by us")
+            return
+
+        await self._servers[server_id].send_stun_connect(
+            protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
+        )
+
+    async def send_server_connect_failed(self, server_id, protocol_version, token):
+        if server_id not in self._servers:
+            return
+
+        if isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: server_connect_failed() called on a server NOT managed by us")
+            return
+
+        await self._servers[server_id].send_connect_failed(protocol_version, token)
+
+    async def stun_result(self, token, interface_number, peer_type, peer_ip, peer_port):
+        prefix = token[0]
+        token = self._tokens.get(token[1:])
+        if not token:
+            return
+
+        await token.stun_result(prefix, interface_number, peer_type, peer_ip, peer_port)
+
+    async def remove_server(self, server_id):
         if server_id not in self._servers:
             return
 
@@ -86,7 +137,18 @@ class Application:
 
         source.server = Server(self, server_id, game_type, source, server_port, invite_code_secret)
         self._servers[source.server.server_id] = source.server
-        await source.server.detect_connection(protocol_version)
+
+        # Find an unused token.
+        while True:
+            token = secrets.token_hex(16)
+            if token not in self._tokens:
+                break
+
+        # Create a token to connect server and client.
+        token = TokenVerify(self, source, protocol_version, token, source.server)
+        self._tokens[token.token] = token
+
+        await token.connect()
 
     async def receive_PACKET_COORDINATOR_SERVER_UPDATE(self, source, protocol_version, **info):
         await source.server.update(info)
@@ -151,3 +213,12 @@ class Application:
         # Client and server are connected; clean the token.
         await token.connected()
         self.delete_token(token.token)
+
+    async def receive_PACKET_COORDINATOR_SERCLI_STUN_RESULT(
+        self, source, protocol_version, token, interface_number, result
+    ):
+        # This informs us that the client has did his STUN request. We
+        # currently take no action on this packet, but it could be used to
+        # know there should be a STUN result or to continue with the next
+        # available method.
+        pass
