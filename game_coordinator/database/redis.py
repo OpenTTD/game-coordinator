@@ -19,12 +19,14 @@ class Database:
     def __init__(self):
         # The application claiming this Database instance should set this.
         self.application = None
-        # Set by startup() on start-up.
-        self.gc_id = None
+        # Set by sync_and_monitor() on start-up.
+        self._gc_id = -1
 
         self._redis = aioredis.from_url(_redis_url, decode_responses=True)
 
-    async def startup(self):
+        log.info("Using redis as backend")
+
+    async def sync_and_monitor(self):
         # Check with redis if any of the keys are available.
         while True:
             for i in range(16):
@@ -91,7 +93,7 @@ class Database:
                     await self._redis.delete(f"gc-direct-ipv4:{server_id}")
                     await self._redis.delete(f"gc-direct-ipv6:{server_id}")
 
-                    self.application.remove_server(server_id)
+                    await self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
         servers = await self._redis.keys("gc-server:*")
@@ -108,7 +110,7 @@ class Database:
 
             server_str = await self._redis.get(direct_ipv4)
             server = json.loads(server_str)
-            await self.application.update_external_direct_ip("ipv4", server_id, server)
+            await self.application.update_external_direct_ip(server_id, "ipv4", server["ip"], server["port"])
 
         direct_ipv6s = await self._redis.keys("gc-direct-ipv6:*")
         for direct_ipv6 in direct_ipv6s:
@@ -116,7 +118,7 @@ class Database:
 
             server_str = await self._redis.get(direct_ipv6)
             server = json.loads(server_str)
-            await self.application.update_external_direct_ip("ipv6", server_id, server)
+            await self.application.update_external_direct_ip(server_id, "ipv6", server["ip"], server["port"])
 
         # We wait for 70 seconds, well past the TTL of servers, and query all
         # keys. This forces redis under all condition to expire servers that
@@ -130,67 +132,115 @@ class Database:
         await self._redis.keys("gc-server:*")
 
     async def _follow_stream(self):
+        lookup_table = {
+            "new-direct-ip": self.application.update_external_direct_ip,
+            "update": self.application.update_external_server,
+            "delete": self.application.remove_server,
+            "stun-result": self.application.stun_result,
+            "send-stun-request": self.application.send_server_stun_request,
+            "send-stun-connect": self.application.send_server_stun_connect,
+            "send-connect-failed": self.application.send_server_connect_failed,
+        }
+        current_id = "$"
+
         while True:
-            data = await self._redis.xread({"gc-stream": "$"}, block=0)
-            for _, entry in data[0][1]:
+            data = await self._redis.xread({"gc-stream": current_id}, block=0)
+            for entry_id, entry in data[0][1]:
+                current_id = entry_id
+
                 # Ignore messages from ourselves.
                 if entry["gc-id"] == self._gc_id:
                     continue
 
-                if "new-direct-ipv4" in entry:
-                    server_id = entry["new-direct-ipv4"]
-                    server = json.loads(entry["server"])
-                    await self.application.update_external_direct_ip("ipv4", server_id, server)
+                if "type" not in entry:
+                    log.error("Internal error: saw unknown entry on stream: %r", entry)
                     continue
 
-                if "new-direct-ipv6" in entry:
-                    server_id = entry["new-direct-ipv6"]
-                    server = json.loads(entry["server"])
-                    await self.application.update_external_direct_ip("ipv6", server_id, server)
+                proc = lookup_table.get(entry["type"])
+                if proc is None:
+                    log.error("Internal error: saw unknown type on stream: %s", entry["type"])
                     continue
-
-                if "update" in entry:
-                    server_id = entry["update"]
-                    info = json.loads(entry["info"])
-                    await self.application.update_external_server(server_id, info)
-                    continue
-
-                if "delete" in entry:
-                    server_id = entry["delete"]
-                    self.application.remove_server(server_id)
-                    continue
-
-                log.error("Internal error: saw invalid entry on stream: %s", entry)
+                payload = json.loads(entry["payload"])
+                await proc(**payload)
 
     def get_server_id(self):
         return int(self._gc_id)
 
-    async def update_info(self, server_id, info):
-        info_str = json.dumps(info)
-        await self._redis.set(f"gc-server:{server_id}", info_str, ex=60)
+    async def add_to_stream(self, entry_type, payload):
         await self._redis.xadd(
-            "gc-stream", {"gc-id": self._gc_id, "update": server_id, "info": info_str}, approximate=1000
+            "gc-stream", {"gc-id": self._gc_id, "type": entry_type, "payload": json.dumps(payload)}, approximate=1000
         )
+
+    async def update_info(self, server_id, info):
+        await self._redis.set(f"gc-server:{server_id}", json.dumps(info), ex=60)
+        await self.add_to_stream("update", {"server_id": server_id, "info": info})
 
     async def direct_ip(self, server_id, server_ip, server_port):
         # Keep track of the IP this server has.
-        if isinstance(server_ip, ipaddress.IPv6Address):
-            type = "ipv6"
-        else:
-            type = "ipv4"
-        server_str = json.dumps({"ip": str(server_ip), "port": server_port})
-        if await self._redis.set(f"gc-direct-{type}:{server_id}", server_str) > 0:
-            await self._redis.xadd(
-                "gc-stream",
-                {"gc-id": self._gc_id, f"new-direct-{type}": server_id, "server": server_str},
-                approximate=1000,
+        type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
+        if (
+            await self._redis.set(
+                f"gc-direct-{type}:{server_id}", json.dumps({"ip": str(server_ip), "port": server_port})
+            )
+            > 0
+        ):
+            await self.add_to_stream(
+                "new-direct-ip", {"server_id": server_id, "type": type, "ip": str(server_ip), "port": server_port}
             )
 
     async def server_offline(self, server_id):
         await self._redis.delete(f"gc-direct-ipv4:{server_id}")
         await self._redis.delete(f"gc-direct-ipv6:{server_id}")
         await self._redis.delete(f"gc-server:{server_id}")
-        await self._redis.xadd("gc-stream", {"gc-id": self._gc_id, "delete": server_id}, approximate=1000)
+        await self.add_to_stream("delete", {"server_id": server_id})
+
+    async def stun_result(self, token, interface_number, peer_ip, peer_port):
+        await self.add_to_stream(
+            "stun-result",
+            {
+                "token": token,
+                "interface_number": interface_number,
+                "peer_type": "ipv6" if isinstance(peer_ip, ipaddress.IPv6Address) else "ipv4",
+                "peer_ip": str(peer_ip),
+                "peer_port": peer_port,
+            },
+        )
+
+    async def send_server_stun_request(self, server_id, protocol_version, token):
+        await self.add_to_stream(
+            "send-stun-request",
+            {
+                "server_id": server_id,
+                "protocol_version": protocol_version,
+                "token": token,
+            },
+        )
+
+    async def send_server_stun_connect(
+        self, server_id, protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
+    ):
+        await self.add_to_stream(
+            "send-stun-connect",
+            {
+                "server_id": server_id,
+                "protocol_version": protocol_version,
+                "token": token,
+                "tracking_number": tracking_number,
+                "interface_number": interface_number,
+                "peer_ip": peer_ip,
+                "peer_port": peer_port,
+            },
+        )
+
+    async def send_server_connect_failed(self, server_id, protocol_version, token):
+        await self.add_to_stream(
+            "send-connect-failed",
+            {
+                "server_id": server_id,
+                "protocol_version": protocol_version,
+                "token": token,
+            },
+        )
 
 
 @click_helper.extend

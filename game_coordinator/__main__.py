@@ -7,6 +7,7 @@ from openttd_helpers.logging_helper import click_logging
 from openttd_helpers.sentry_helper import click_sentry
 
 from openttd_protocol.protocol.coordinator import CoordinatorProtocol
+from openttd_protocol.protocol.stun import StunProtocol
 
 from .application.coordinator import Application as CoordinatorApplication
 from .database.redis import click_database_redis
@@ -37,8 +38,15 @@ async def run_server(application, bind, port, ProtocolClass):
     "--bind", help="The IP to bind the server to", multiple=True, default=["::1", "127.0.0.1"], show_default=True
 )
 @click.option("--coordinator-port", help="Port of the Game Coordinator", default=3976, show_default=True)
+@click.option("--stun-port", help="Port of the STUN server", default=3975, show_default=True)
 @click.option("--web-port", help="Port of the web server.", default=80, show_default=True, metavar="PORT")
-@click.option("--shared-secret", help="Shared secret to validate invite-code-secrets with", required=True)
+@click.option("--shared-secret", help="Shared secret to validate invite-code-secrets with")
+@click.option(
+    "--app",
+    type=click.Choice(["coordinator", "stun"], case_sensitive=False),
+    required=True,
+    callback=click_helper.import_module("game_coordinator.application", "Application"),
+)
 @click.option(
     "--db",
     type=click.Choice(["redis"], case_sensitive=False),
@@ -56,17 +64,24 @@ async def run_server(application, bind, port, ProtocolClass):
     help="Use a SOCKS proxy to query game servers.",
 )
 @click_database_redis
-def main(bind, coordinator_port, web_port, shared_secret, db, proxy_protocol, socks_proxy):
+def main(bind, app, coordinator_port, stun_port, web_port, shared_secret, db, proxy_protocol, socks_proxy):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
-    loop.run_until_complete(db_instance.startup())
-
-    app_instance = CoordinatorApplication(shared_secret, db_instance, socks_proxy)
+    app_instance = app(db_instance, shared_secret, socks_proxy)
+    loop.run_until_complete(app_instance.startup())
 
     CoordinatorProtocol.proxy_protocol = proxy_protocol
+    StunProtocol.proxy_protocol = proxy_protocol
 
-    server = loop.run_until_complete(run_server(app_instance, bind, coordinator_port, CoordinatorProtocol))
+    if isinstance(app_instance, CoordinatorApplication):
+        port = coordinator_port
+        protocol = CoordinatorProtocol
+    else:
+        port = stun_port
+        protocol = StunProtocol
+
+    server = loop.run_until_complete(run_server(app_instance, bind, port, protocol))
 
     try:
         start_webserver(bind, web_port)

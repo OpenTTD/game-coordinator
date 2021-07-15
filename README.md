@@ -11,11 +11,11 @@
 [![GitHub deployments (Staging)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/staging?label=staging)](https://github.com/OpenTTD/game-coordinator/deployments)
 [![GitHub deployments (Production)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/production?label=production)](https://github.com/OpenTTD/game-coordinator/deployments)
 
-This is the Game Coordinator to assist in OpenTTD players to play together.
+This is the Game Coordinator / STUN server to assist in OpenTTD players to play together.
 
 ## Development
 
-This API is written in Python 3.8 with aiohttp, and makes strong use of asyncio.
+This server is written in Python 3.8 with aiohttp, and makes strong use of asyncio.
 
 ### Running a local server
 
@@ -41,17 +41,32 @@ Make sure you have a local redis running. For example via Docker:
 docker run --rm -p 6379:6379 redis
 ```
 
-#### Starting a local server
+#### Starting a local server (Game Coordinator)
 
 You can start the Game Coordinator server by running:
 
 ```bash
-.env/bin/python -m game_coordinator --db redis
+.env/bin/python -m game_coordinator --db redis --app coordinator --shared-secret test --web-port 12345
 ```
 
-### Running via docker
+#### Starting a local server (STUN Server)
+
+You can start the STUN server by running:
+
+```bash
+.env/bin/python -m game_coordinator --db redis --app stun --web-port 12346
+```
+
+### Running via docker (Game Coordinator)
 
 ```bash
 docker build -t openttd/game-coordinator:local .
 docker run --rm -p 127.0.0.1:3976:3976 openttd/game-coordinator:local
+```
+
+### Running via docker (STUN server)
+
+```bash
+docker build -t openttd/game-coordinator:local .
+docker run --rm -p 127.0.0.1:3975:3975 openttd/game-coordinator:local --app stun --bind 0.0.0.0 --db redis --redis-url redis://redis
 ```
