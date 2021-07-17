@@ -32,8 +32,9 @@ class TokenConnect:
         # needed.
         self._connect_methods = asyncio.Queue()
         for direct_ip in self._server.direct_ips:
-            self._connect_methods.put_nowait(lambda: self._connect_direct_connect(direct_ip))
-        self._connect_methods.put_nowait(lambda: self._connect_stun_request())
+            ip_type = "ipv6" if direct_ip["ip"][0] == "[" else "ipv4"
+            self._connect_methods.put_nowait((f"direct-{ip_type}", lambda: self._connect_direct_connect(direct_ip)))
+        self._connect_methods.put_nowait(("stun-request", lambda: self._connect_stun_request()))
 
         # The peer-type of STUN requests we allow to match.
         self._stun_ip_type = [
@@ -50,6 +51,8 @@ class TokenConnect:
         self._connect_task = None
         self._timeout_task = None
 
+        await self._application.database.stats_connect(self._connect_method, True)
+
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
         self._stun_result[prefix][peer_type] = (interface_number, peer_ip, peer_port)
 
@@ -60,13 +63,16 @@ class TokenConnect:
                 client_peer = self._stun_result["C"][ip_type]
                 server_peer = self._stun_result["S"][ip_type]
 
-                self._connect_methods.put_nowait(lambda: self._connect_stun_connect(client_peer, server_peer))
+                self._connect_methods.put_nowait(
+                    (f"stun-{ip_type}", lambda: self._connect_stun_connect(client_peer, server_peer))
+                )
 
     async def _timeout(self):
         try:
             await asyncio.sleep(10)
 
             # If we reach here, we haven't managed to get a connection within 10 seconds. Time to call it a day.
+            self._timeout_task = None
             await self._connect_failed()
         except Exception:
             log.exception("Exception during _timeout()")
@@ -82,14 +88,17 @@ class TokenConnect:
                 # connecting. At this point it is safe to assume there will
                 # not be any other methods presenting itself, so call it a
                 # day.
-                await self._connect_failed()
+                self._connect_task = None
+                asyncio.create_task(self._connect_failed())
+                break
             except Exception:
                 log.exception("Exception during _connect_next_wait()")
 
             await self._connect_next_event.wait()
 
     async def _connect_next_wait(self):
-        proc = await self._connect_methods.get()
+        (name, proc) = await self._connect_methods.get()
+        self._connect_method = name
         await proc()
 
     async def connect_failed(self, tracking_number):
@@ -98,6 +107,8 @@ class TokenConnect:
         # while safely ignoring the other.
         if tracking_number != self._tracking_number:
             return
+
+        await self._application.database.stats_connect(self._connect_method, False)
 
         # Try the next attempt now.
         self._tracking_number += 1
@@ -151,5 +162,7 @@ class TokenConnect:
             # If the client already left, that is fine.
             pass
         await self._server.send_connect_failed(self._protocol_version, self.server_token)
+
+        await self._application.database.stats_connect("failed", False)
 
         self._application.delete_token(self.token)

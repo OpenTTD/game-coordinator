@@ -84,7 +84,7 @@ def main(bind, app, coordinator_port, stun_port, web_port, shared_secret, db, pr
     server = loop.run_until_complete(run_server(app_instance, bind, port, protocol))
 
     try:
-        start_webserver(bind, web_port)
+        start_webserver(bind, web_port, db_instance)
     except KeyboardInterrupt:
         pass
 

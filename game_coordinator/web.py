@@ -6,10 +6,27 @@ from aiohttp.web_log import AccessLogger
 log = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
+DB_INSTANCE = None
+
 
 @routes.get("/healthz")
 async def healthz_handler(request):
     return web.HTTPOk()
+
+
+@routes.get("/stats")
+async def stats_handler(request):
+    verify = await DB_INSTANCE.get_stats("verify")
+    connect = await DB_INSTANCE.get_stats("connect")
+    connect_failed = await DB_INSTANCE.get_stats("connect-failed")
+
+    return web.json_response(
+        {
+            "verify": verify,
+            "connect": connect,
+            "connect-failed": connect_failed,
+        }
+    )
 
 
 @routes.route("*", "/{tail:.*}")
@@ -25,7 +42,10 @@ class ErrorOnlyAccessLogger(AccessLogger):
             super().log(request, response, time)
 
 
-def start_webserver(bind, web_port):
+def start_webserver(bind, web_port, db_instance):
+    global DB_INSTANCE
+    DB_INSTANCE = db_instance
+
     webapp = web.Application()
     webapp.add_routes(routes)
 
