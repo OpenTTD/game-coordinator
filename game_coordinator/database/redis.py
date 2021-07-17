@@ -192,6 +192,44 @@ class Database:
         await self._redis.delete(f"gc-server:{server_id}")
         await self.add_to_stream("delete", {"server_id": server_id})
 
+    async def stats_verify(self, connection_type_name):
+        key = "stats-verify"
+
+        await self._stats(key, connection_type_name)
+
+    async def stats_connect(self, method_name, result):
+        if result:
+            key = "stats-connect"
+        else:
+            key = "stats-connect-failed"
+
+        await self._stats(key, method_name)
+
+    async def _stats(self, key, subkey):
+        # Put all stats of a single day in one bucket.
+        day_since_1970 = int(time.time()) // (3600 * 24)
+
+        key = f"{key}:{day_since_1970}-{subkey}"
+
+        # Keep statistics for one month.
+        await self._redis.expire(key, 3600 * 24 * 30)
+        await self._redis.incr(key)
+
+    async def get_stats(self, key):
+        result = {}
+
+        stats = await self._redis.keys(f"stats-{key}:*")
+        for stat in stats:
+            _, _, time_subkey = stat.partition(":")
+            day_since_1970, _, subkey = time_subkey.partition("-")
+
+            if day_since_1970 not in result:
+                result[day_since_1970] = {}
+
+            result[day_since_1970][subkey] = await self._redis.get(stat)
+
+        return result
+
     async def stun_result(self, token, interface_number, peer_ip, peer_port):
         await self.add_to_stream(
             "stun-result",

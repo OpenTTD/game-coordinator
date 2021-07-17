@@ -67,6 +67,9 @@ class TokenVerify:
             server_ip_str = f"[{server_ip}]" if isinstance(server_ip, ipaddress.IPv6Address) else str(server_ip)
             self._server.direct_ips.append({"ip": server_ip_str, "port": self._server.server_port})
             await self._application.database.direct_ip(self._server.server_id, server_ip, self._server.server_port)
+
+            ip_type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
+            await self._application.database.stats_verify(f"direct-{ip_type}")
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
             # These all indicate a connection could not be created, so the server is not reachable.
             pass
@@ -89,6 +92,9 @@ class TokenVerify:
             )
 
         await self._server.send_register_ack(self._protocol_version)
+        await self._application.database.stats_verify(
+            self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()
+        )
 
     async def _create_connection(self, server_ip, server_port):
         connected = asyncio.Event()
