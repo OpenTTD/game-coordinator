@@ -40,6 +40,7 @@ class Application:
         self._servers = {}
         self._tokens = {}
         self._newgrf_lookup_table = {}
+        self.turn_servers = []
 
         self.database.application = self
 
@@ -52,6 +53,14 @@ class Application:
 
     def delete_token(self, token):
         del self._tokens[token]
+
+    async def add_turn_server(self, connection_string):
+        if connection_string not in self.turn_servers:
+            self.turn_servers.append(connection_string)
+
+    async def remove_turn_server(self, connection_string):
+        if connection_string in self.turn_servers:
+            self.turn_servers.remove(connection_string)
 
     async def newgrf_added(self, index, newgrf):
         self._newgrf_lookup_table[index] = newgrf
@@ -114,6 +123,20 @@ class Application:
 
         await self._servers[server_id].send_stun_connect(
             protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
+        )
+
+    async def send_server_turn_connect(
+        self, server_id, protocol_version, token, tracking_number, ticket, connection_string
+    ):
+        if server_id not in self._servers:
+            return
+
+        if isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: server_turn_connect() called on a server NOT managed by us")
+            return
+
+        await self._servers[server_id].send_turn_connect(
+            protocol_version, token, tracking_number, ticket, connection_string
         )
 
     async def send_server_connect_failed(self, server_id, protocol_version, token):

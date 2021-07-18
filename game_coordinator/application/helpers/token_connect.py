@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 
 from openttd_protocol.wire.exceptions import SocketClosed
 
@@ -79,6 +80,7 @@ class TokenConnect:
 
     async def _connect(self):
         self._connect_next_event = asyncio.Event()
+        tried_turn = False
 
         while True:
             try:
@@ -86,8 +88,22 @@ class TokenConnect:
             except asyncio.TimeoutError:
                 # It took more than 2 seconds to get a new method for
                 # connecting. At this point it is safe to assume there will
-                # not be any other methods presenting itself, so call it a
-                # day.
+                # not be any other methods presenting itself. As a last-resort,
+                # try if TURN is available.
+                if not tried_turn and self._protocol_version >= 5 and self._application.turn_servers:
+                    tried_turn = True
+                    connection_string = random.choice(self._application.turn_servers)
+
+                    # If no STUN request was received, this signal is still set.
+                    self._connect_next_event.clear()
+
+                    self._tracking_number += 1
+                    self._connect_method = "turn"
+                    await self._connect_turn_connect(connection_string)
+                    await self._connect_next_event.wait()
+
+                    # If TURN failed, we have no other method left, so fail the attempt.
+
                 self._connect_task = None
                 asyncio.create_task(self._connect_failed())
                 break
@@ -149,6 +165,24 @@ class TokenConnect:
             server_peer[0],
             client_peer[1],
             client_peer[2],
+        )
+
+    async def _connect_turn_connect(self, connection_string):
+        turn_ticket = await self._application.database.create_turn_ticket()
+
+        await self._source.protocol.send_PACKET_COORDINATOR_GC_TURN_CONNECT(
+            self._protocol_version,
+            self.client_token,
+            self._tracking_number,
+            turn_ticket,
+            connection_string,
+        )
+        await self._server.send_turn_connect(
+            self._protocol_version,
+            self.server_token,
+            self._tracking_number,
+            turn_ticket,
+            connection_string,
         )
 
     async def _connect_failed(self, on_request=False):
