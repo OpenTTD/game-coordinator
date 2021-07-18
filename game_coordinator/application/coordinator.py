@@ -34,6 +34,7 @@ class Application:
         self.socks_proxy = socks_proxy
         self._servers = {}
         self._tokens = {}
+        self._newgrf_lookup_table = {}
 
         self.database.application = self
 
@@ -47,6 +48,15 @@ class Application:
     def delete_token(self, token):
         del self._tokens[token]
 
+    async def newgrf_added(self, index, newgrf):
+        self._newgrf_lookup_table[index] = newgrf
+
+    async def remove_newgrf_from_table(self, grfid, md5sum):
+        for index, newgrf in self._newgrf_lookup_table.items():
+            if newgrf["grfid"] == grfid and newgrf["md5sum"] == md5sum:
+                del self._newgrf_lookup_table[index]
+                return
+
     async def update_external_server(self, server_id, info):
         if server_id not in self._servers:
             self._servers[server_id] = ServerExternal(self, server_id)
@@ -56,6 +66,16 @@ class Application:
             return
 
         await self._servers[server_id].update(info)
+
+    async def update_newgrf_external_server(self, server_id, newgrfs_indexed):
+        if server_id not in self._servers:
+            self._servers[server_id] = ServerExternal(self, server_id)
+
+        if not isinstance(self._servers[server_id], ServerExternal):
+            log.error("Internal error: update_external_server() called on a server managed by us")
+            return
+
+        await self._servers[server_id].update_newgrf(newgrfs_indexed)
 
     async def update_external_direct_ip(self, server_id, type, ip, port):
         if server_id not in self._servers:
@@ -150,18 +170,29 @@ class Application:
 
         await token.connect()
 
-    async def receive_PACKET_COORDINATOR_SERVER_UPDATE(self, source, protocol_version, **info):
+    async def receive_PACKET_COORDINATOR_SERVER_UPDATE(
+        self, source, protocol_version, newgrf_serialization_type, newgrfs, **info
+    ):
+        await source.server.update_newgrf(newgrf_serialization_type, newgrfs)
         await source.server.update(info)
 
     async def receive_PACKET_COORDINATOR_CLIENT_LISTING(
-        self, source, protocol_version, game_info_version, openttd_version
+        self, source, protocol_version, game_info_version, openttd_version, newgrf_lookup_table_cursor
     ):
+        if protocol_version >= 4 and self._newgrf_lookup_table:
+            await source.protocol.send_PACKET_COORDINATOR_GC_NEWGRF_LOOKUP(
+                protocol_version, newgrf_lookup_table_cursor, self._newgrf_lookup_table
+            )
+
         # Ensure servers matching "openttd_version" are at the top.
         servers_match = []
         servers_other = []
         for server in self._servers.values():
             # Servers that are not reachable shouldn't be listed.
             if server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
+                continue
+            # Server is announced but hasn't finished registration.
+            if not server.info:
                 continue
 
             if server.info["openttd_version"] == openttd_version:
@@ -170,8 +201,9 @@ class Application:
                 servers_other.append(server)
 
         await source.protocol.send_PACKET_COORDINATOR_GC_LISTING(
-            protocol_version, game_info_version, servers_match + servers_other
+            protocol_version, game_info_version, servers_match + servers_other, self._newgrf_lookup_table
         )
+        await self.database.stats_listing(game_info_version)
 
     async def receive_PACKET_COORDINATOR_CLIENT_CONNECT(self, source, protocol_version, invite_code):
         if not invite_code or invite_code[0] != "+" or invite_code not in self._servers:
