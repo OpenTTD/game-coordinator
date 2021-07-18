@@ -14,6 +14,18 @@ log = logging.getLogger(__name__)
 
 _redis_url = None
 
+# Server update every 30 seconds, so if we haven't seen it for twice that it
+# means it is no longer there.
+TTL_SERVER = 60
+# Give a bit of grace period to forget about NewGRFs, so server restarts don't
+# bump the counter.
+TTL_NEWGRF = TTL_SERVER + 60
+# GC claims are refreshed every 30 seconds, so after twice that, a GC has
+# crashed / exited and it can be reclaimed.
+TTL_GC_ID = 60
+# Keep statistics for 30 days.
+TTL_STATS = 3600 * 24 * 30
+
 
 class Database:
     def __init__(self):
@@ -30,7 +42,7 @@ class Database:
         # Check with redis if any of the keys are available.
         while True:
             for i in range(16):
-                res = await self._redis.set(f"gc-id:{i}", 1, ex=60, nx=True)
+                res = await self._redis.set(f"gc-id:{i}", 1, ex=TTL_GC_ID, nx=True)
                 if res is not None:
                     self._gc_id = str(i)
                     break
@@ -68,7 +80,7 @@ class Database:
             last_time = time.time()
 
             await asyncio.sleep(30)
-            await self._redis.set(f"gc-id:{self._gc_id}", 1, ex=60)
+            await self._redis.set(f"gc-id:{self._gc_id}", 1, ex=TTL_GC_ID)
 
             if time.time() - last_time > 50:
                 raise Exception("We were about to lose our GC-id, so we crash instead.")
@@ -87,6 +99,12 @@ class Database:
                 if message["type"] != "message":
                     continue
 
+                if message["data"].startswith("gc-newgrf:"):
+                    _, _, grfid_md5sum = message["data"].partition(":")
+                    grfid, _, md5sum = grfid_md5sum.partition("-")
+
+                    await self.application.remove_newgrf_from_table(grfid, md5sum)
+
                 if message["data"].startswith("gc-server:"):
                     _, _, server_id = message["data"].partition(":")
 
@@ -96,19 +114,57 @@ class Database:
                     await self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
+        servers = await self._redis.keys("gc-newgrf:*")
+        for server in servers:
+            _, _, grfid_md5sum = server.partition(":")
+            grfid, _, md5sum = grfid_md5sum.partition("-")
+
+            newgrf_lookup_str = await self._redis.get(server)
+            if newgrf_lookup_str is None:
+                # Server left in the meantime. The stream will update the rest.
+                continue
+
+            newgrf_lookup = json.loads(newgrf_lookup_str)
+            newgrf = {
+                "grfid": int(grfid),
+                "md5sum": md5sum,
+                "name": newgrf_lookup["name"],
+            }
+            await self.application.newgrf_added(newgrf_lookup["index"], newgrf)
+
         servers = await self._redis.keys("gc-server:*")
         for server in servers:
             _, _, server_id = server.partition(":")
 
             info_str = await self._redis.get(server)
+            if info_str is None:
+                # Server left in the meantime. The stream will update the rest.
+                continue
+
             info = json.loads(info_str)
             await self.application.update_external_server(server_id, info)
+
+        servers = await self._redis.keys("gc-server-newgrf:*")
+        for server in servers:
+            _, _, server_id = server.partition(":")
+
+            newgrf_indexed_str = await self._redis.get(server)
+            if newgrf_indexed_str is None:
+                # Server left in the meantime. The stream will update the rest.
+                continue
+
+            newgrf_indexed = json.loads(newgrf_indexed_str)
+            await self.application.update_newgrf_external_server(server_id, newgrf_indexed)
 
         direct_ipv4s = await self._redis.keys("gc-direct-ipv4:*")
         for direct_ipv4 in direct_ipv4s:
             _, _, server_id = direct_ipv4.partition(":")
 
             server_str = await self._redis.get(direct_ipv4)
+            if server_str is None:
+                # Server left in the meantime. The stream will update the rest.
+                continue
+
             server = json.loads(server_str)
             await self.application.update_external_direct_ip(server_id, "ipv4", server["ip"], server["port"])
 
@@ -117,6 +173,10 @@ class Database:
             _, _, server_id = direct_ipv6.partition(":")
 
             server_str = await self._redis.get(direct_ipv6)
+            if server_str is None:
+                # Server left in the meantime. The stream will update the rest.
+                continue
+
             server = json.loads(server_str)
             await self.application.update_external_direct_ip(server_id, "ipv6", server["ip"], server["port"])
 
@@ -128,13 +188,15 @@ class Database:
         # around longer. This gives a bit of a guarantee they do not live past
         # this point. The most likely scenario for this is a crashed GC, and
         # not all servers reconnecting.
-        await asyncio.sleep(70)
+        await asyncio.sleep(TTL_SERVER + 10)
         await self._redis.keys("gc-server:*")
 
     async def _follow_stream(self):
         lookup_table = {
             "new-direct-ip": self.application.update_external_direct_ip,
             "update": self.application.update_external_server,
+            "update-newgrf": self.application.update_newgrf_external_server,
+            "newgrf-added": self.application.newgrf_added,
             "delete": self.application.remove_server,
             "stun-result": self.application.stun_result,
             "send-stun-request": self.application.send_server_stun_request,
@@ -171,8 +233,59 @@ class Database:
             "gc-stream", {"gc-id": self._gc_id, "type": entry_type, "payload": json.dumps(payload)}, maxlen=1000
         )
 
+    async def newgrf_in_use(self, newgrf):
+        await self._redis.expire(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}", TTL_NEWGRF)
+
+    async def newgrf_assign_index(self, newgrf):
+        newgrf_lookup_str = await self._redis.get(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}")
+        if newgrf_lookup_str is not None:
+            newgrf_lookup = json.loads(newgrf_lookup_str)
+
+            if newgrf_lookup["name"] is not None or newgrf["name"] is None:
+                # Make sure the entry lives a bit longer.
+                await self.newgrf_in_use(newgrf)
+                return newgrf_lookup["index"]
+
+            # There is an entry in the table, but it doesn't have a name. This
+            # happens when old servers announced the NewGRF. But we do have a
+            # name now. So update the entry to tell the name.
+            newgrf_lookup["name"] = newgrf["name"]
+            await self._redis.set(
+                f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}", json.dumps(newgrf_lookup), ex=TTL_NEWGRF
+            )
+
+            await self.application.newgrf_added(newgrf_lookup["index"], newgrf)
+            await self.add_to_stream("newgrf-added", {"index": newgrf_lookup["index"], "newgrf": newgrf})
+
+            return newgrf_lookup["index"]
+
+        newgrf_lookup = {
+            "index": await self._redis.incr("gc-newgrf-counter"),
+            "name": newgrf["name"],
+        }
+        res = await self._redis.set(
+            f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}", json.dumps(newgrf_lookup), nx=True, ex=TTL_NEWGRF
+        )
+        if res is not None:
+            await self.application.newgrf_added(newgrf_lookup["index"], newgrf)
+            await self.add_to_stream("newgrf-added", {"index": newgrf_lookup["index"], "newgrf": newgrf})
+
+            return newgrf_lookup["index"]
+
+        # Another instance sneaked in between our get and set, so fetch
+        # the key again. This time it is guaranteed to exist.
+        newgrf_lookup_str = await self._redis.get(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}")
+        newgrf_lookup = json.loads(newgrf_lookup_str)
+
+        await self.newgrf_in_use(newgrf)
+        return newgrf_lookup["index"]
+
+    async def update_newgrf(self, server_id, newgrfs_indexed):
+        await self._redis.set(f"gc-server-newgrf:{server_id}", json.dumps(newgrfs_indexed), ex=TTL_SERVER)
+        await self.add_to_stream("update-newgrf", {"server_id": server_id, "newgrfs_indexed": newgrfs_indexed})
+
     async def update_info(self, server_id, info):
-        await self._redis.set(f"gc-server:{server_id}", json.dumps(info), ex=60)
+        await self._redis.set(f"gc-server:{server_id}", json.dumps(info), ex=TTL_SERVER)
         await self.add_to_stream("update", {"server_id": server_id, "info": info})
 
     async def direct_ip(self, server_id, server_ip, server_port):
@@ -190,29 +303,28 @@ class Database:
         await self._redis.delete(f"gc-direct-ipv4:{server_id}")
         await self._redis.delete(f"gc-direct-ipv6:{server_id}")
         await self._redis.delete(f"gc-server:{server_id}")
+        await self._redis.delete(f"gc-server-newgrf:{server_id}")
         await self.add_to_stream("delete", {"server_id": server_id})
 
     async def stats_verify(self, connection_type_name):
-        key = "stats-verify"
-
-        await self._stats(key, connection_type_name)
+        await self._stats("verify", connection_type_name)
 
     async def stats_connect(self, method_name, result):
-        if result:
-            key = "stats-connect"
-        else:
-            key = "stats-connect-failed"
+        key = "connect" if result else "connect-failed"
 
         await self._stats(key, method_name)
+
+    async def stats_listing(self, game_info_version):
+        await self._stats("listing", game_info_version)
 
     async def _stats(self, key, subkey):
         # Put all stats of a single day in one bucket.
         day_since_1970 = int(time.time()) // (3600 * 24)
 
-        key = f"{key}:{day_since_1970}-{subkey}"
+        key = f"stats-{key}:{day_since_1970}-{subkey}"
 
         # Keep statistics for one month.
-        await self._redis.expire(key, 3600 * 24 * 30)
+        await self._redis.expire(key, TTL_STATS)
         await self._redis.incr(key)
 
     async def get_stats(self, key):

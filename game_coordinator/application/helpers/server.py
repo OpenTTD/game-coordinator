@@ -1,9 +1,13 @@
 import asyncio
+import logging
 
 from openttd_protocol.protocol.coordinator import (
     ConnectionType,
+    NewGRFSerializationType,
     ServerGameType,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ConnectAndCloseProtocol(asyncio.Protocol):
@@ -32,6 +36,9 @@ class ServerExternal:
         self.game_type = ServerGameType(info["game_type"])
         self.connection_type = ConnectionType(info["connection_type"])
         self.info = info
+
+    async def update_newgrf(self, newgrfs_indexed):
+        self.newgrfs_indexed = newgrfs_indexed
 
     async def update_direct_ip(self, ip_type, ip, port):
         # Do not overwrite the connection_string if we are named by invite-code.
@@ -81,6 +88,36 @@ class Server:
 
     async def disconnect(self):
         await self._application.database.server_offline(self.server_id)
+
+    async def update_newgrf(self, newgrf_serialization_type, newgrfs):
+        if newgrfs is None:
+            return
+
+        # This update is sent after the first, and is meant just as
+        # notification the NewGRFs are still in use. A server cannot change
+        # NewGRFs in a running game, so as long as this packet is sent, the
+        # server is not actually changing NewGRFs.
+        if newgrf_serialization_type == NewGRFSerializationType.NST_GRFID_MD5:
+            for newgrf in newgrfs:
+                await self._application.database.newgrf_in_use(newgrf)
+            return
+
+        if newgrf_serialization_type not in (
+            NewGRFSerializationType.NST_GRFID_MD5_NAME,
+            NewGRFSerializationType.NST_CONVERSION_GRFID_MD5,
+        ):
+            log.error("Unexpected NewGRF serialization type %s", newgrf_serialization_type.name)
+            return
+
+        # This is the first update; convert the NewGRFs into an index-based
+        # variant.
+        newgrfs_indexed = []
+        for newgrf in newgrfs:
+            index = await self._application.database.newgrf_assign_index(newgrf)
+            newgrfs_indexed.append(index)
+
+        self.newgrfs_indexed = newgrfs_indexed
+        await self._application.database.update_newgrf(self.server_id, newgrfs_indexed)
 
     async def update(self, info):
         self.info = info
