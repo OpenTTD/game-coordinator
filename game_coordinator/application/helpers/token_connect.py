@@ -14,7 +14,7 @@ class TokenConnect:
         self._protocol_version = protocol_version
         self._server = server
 
-        self._tracking_number = 0
+        self._tracking_number = 1
         self.client_token = f"C{self.token}"
         self.server_token = f"S{self.token}"
 
@@ -24,7 +24,7 @@ class TokenConnect:
         }
 
     async def connect(self):
-        self.tracking_number = 0
+        self._tracking_number = 1
 
         # Create a queue with methods we have to connect the client and the
         # server. As some methods (like STUN) are dynamic, a task will be
@@ -102,6 +102,11 @@ class TokenConnect:
         await proc()
 
     async def connect_failed(self, tracking_number):
+        if tracking_number == 0:
+            # Client requested we stop with this connection attempt. So clean it up!
+            asyncio.create_task(self._connect_failed(True))
+            return
+
         # Check if this is our current attempt. Server and client send
         # failures. This way we act on which ever reports the failure first,
         # while safely ignoring the other.
@@ -146,7 +151,7 @@ class TokenConnect:
             client_peer[2],
         )
 
-    async def _connect_failed(self):
+    async def _connect_failed(self, on_request=False):
         if self._connect_task:
             self._connect_task.cancel()
             self._connect_task = None
@@ -163,6 +168,6 @@ class TokenConnect:
             pass
         await self._server.send_connect_failed(self._protocol_version, self.server_token)
 
-        await self._application.database.stats_connect("failed", False)
+        await self._application.database.stats_connect("closed" if on_request else "failed", False)
 
         self._application.delete_token(self.token)
