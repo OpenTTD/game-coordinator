@@ -4,7 +4,7 @@ log = logging.getLogger(__name__)
 
 
 class Application:
-    def __init__(self, database, shared_secret, socks_proxy):
+    def __init__(self, database):
         self.database = database
 
         log.info("Starting STUN server ...")
