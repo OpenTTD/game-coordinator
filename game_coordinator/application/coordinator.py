@@ -1,7 +1,9 @@
 import asyncio
+import click
 import logging
 import secrets
 
+from openttd_helpers import click_helper
 from openttd_protocol.protocol.coordinator import (
     ConnectionType,
     NetworkCoordinatorErrorType,
@@ -21,17 +23,20 @@ from .helpers.token_verify import TokenVerify
 
 log = logging.getLogger(__name__)
 
+_socks_proxy = None
+_shared_secret = None
+
 
 class Application:
-    def __init__(self, database, shared_secret, socks_proxy):
-        if not shared_secret:
-            raise Exception("Please set a shared-secret for this application")
+    def __init__(self, database):
+        if not _shared_secret:
+            raise Exception("Please set --shared-secret for this application")
 
         log.info("Starting Game Coordinator ...")
 
-        self._shared_secret = shared_secret
+        self._shared_secret = _shared_secret
         self.database = database
-        self.socks_proxy = socks_proxy
+        self.socks_proxy = _socks_proxy
         self._servers = {}
         self._tokens = {}
         self._newgrf_lookup_table = {}
@@ -254,3 +259,16 @@ class Application:
         # know there should be a STUN result or to continue with the next
         # available method.
         pass
+
+
+@click_helper.extend
+@click.option("--shared-secret", help="Shared secret to validate invite-code-secrets with")
+@click.option(
+    "--socks-proxy",
+    help="Use a SOCKS proxy to query game servers.",
+)
+def click_application_coordinator(socks_proxy, shared_secret):
+    global _socks_proxy, _shared_secret
+
+    _socks_proxy = socks_proxy
+    _shared_secret = shared_secret

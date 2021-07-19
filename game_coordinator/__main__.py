@@ -9,7 +9,10 @@ from openttd_helpers.sentry_helper import click_sentry
 from openttd_protocol.protocol.coordinator import CoordinatorProtocol
 from openttd_protocol.protocol.stun import StunProtocol
 
-from .application.coordinator import Application as CoordinatorApplication
+from .application.coordinator import (
+    Application as CoordinatorApplication,
+    click_application_coordinator,
+)
 from .database.redis import click_database_redis
 from .web import start_webserver
 
@@ -40,7 +43,6 @@ async def run_server(application, bind, port, ProtocolClass):
 @click.option("--coordinator-port", help="Port of the Game Coordinator", default=3976, show_default=True)
 @click.option("--stun-port", help="Port of the STUN server", default=3975, show_default=True)
 @click.option("--web-port", help="Port of the web server.", default=80, show_default=True, metavar="PORT")
-@click.option("--shared-secret", help="Shared secret to validate invite-code-secrets with")
 @click.option(
     "--app",
     type=click.Choice(["coordinator", "stun"], case_sensitive=False),
@@ -59,16 +61,13 @@ async def run_server(application, bind, port, ProtocolClass):
     "(HINT: for nginx, configure proxy_requests to 1).",
     is_flag=True,
 )
-@click.option(
-    "--socks-proxy",
-    help="Use a SOCKS proxy to query game servers.",
-)
 @click_database_redis
-def main(bind, app, coordinator_port, stun_port, web_port, shared_secret, db, proxy_protocol, socks_proxy):
+@click_application_coordinator
+def main(bind, app, coordinator_port, stun_port, web_port, db, proxy_protocol):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
-    app_instance = app(db_instance, shared_secret, socks_proxy)
+    app_instance = app(db_instance)
     loop.run_until_complete(app_instance.startup())
 
     CoordinatorProtocol.proxy_protocol = proxy_protocol
