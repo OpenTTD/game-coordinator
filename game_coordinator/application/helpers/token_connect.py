@@ -80,7 +80,6 @@ class TokenConnect:
 
     async def _connect(self):
         self._connect_next_event = asyncio.Event()
-        tried_turn = False
 
         while True:
             try:
@@ -90,8 +89,7 @@ class TokenConnect:
                 # connecting. At this point it is safe to assume there will
                 # not be any other methods presenting itself. As a last-resort,
                 # try if TURN is available.
-                if not tried_turn and self._protocol_version >= 5 and self._application.turn_servers:
-                    tried_turn = True
+                if self._protocol_version >= 5 and self._application.turn_servers:
                     connection_string = random.choice(self._application.turn_servers)
 
                     # If no STUN request was received, this signal is still set.
