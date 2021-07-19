@@ -16,15 +16,12 @@ async def healthz_handler(request):
 
 @routes.get("/stats")
 async def stats_handler(request):
-    verify = await DB_INSTANCE.get_stats("verify")
-    connect = await DB_INSTANCE.get_stats("connect")
-    connect_failed = await DB_INSTANCE.get_stats("connect-failed")
-
     return web.json_response(
         {
-            "verify": verify,
-            "connect": connect,
-            "connect-failed": connect_failed,
+            "verify": await DB_INSTANCE.get_stats("verify"),
+            "listing": await DB_INSTANCE.get_stats("listing"),
+            "connect": await DB_INSTANCE.get_stats("connect"),
+            "connect-failed": await DB_INSTANCE.get_stats("connect-failed"),
         }
     )
 
