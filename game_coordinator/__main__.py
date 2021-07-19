@@ -8,10 +8,15 @@ from openttd_helpers.sentry_helper import click_sentry
 
 from openttd_protocol.protocol.coordinator import CoordinatorProtocol
 from openttd_protocol.protocol.stun import StunProtocol
+from openttd_protocol.protocol.turn import TurnProtocol
 
 from .application.coordinator import (
     Application as CoordinatorApplication,
     click_application_coordinator,
+)
+from .application.turn import (
+    Application as TurnApplication,
+    click_application_turn,
 )
 from .database.redis import click_database_redis
 from .web import start_webserver
@@ -42,10 +47,11 @@ async def run_server(application, bind, port, ProtocolClass):
 )
 @click.option("--coordinator-port", help="Port of the Game Coordinator", default=3976, show_default=True)
 @click.option("--stun-port", help="Port of the STUN server", default=3975, show_default=True)
+@click.option("--turn-port", help="Port of the TURN server", default=3974, show_default=True)
 @click.option("--web-port", help="Port of the web server.", default=80, show_default=True, metavar="PORT")
 @click.option(
     "--app",
-    type=click.Choice(["coordinator", "stun"], case_sensitive=False),
+    type=click.Choice(["coordinator", "stun", "turn"], case_sensitive=False),
     required=True,
     callback=click_helper.import_module("game_coordinator.application", "Application"),
 )
@@ -63,7 +69,8 @@ async def run_server(application, bind, port, ProtocolClass):
 )
 @click_database_redis
 @click_application_coordinator
-def main(bind, app, coordinator_port, stun_port, web_port, db, proxy_protocol):
+@click_application_turn
+def main(bind, app, coordinator_port, stun_port, turn_port, web_port, db, proxy_protocol):
     loop = asyncio.get_event_loop()
 
     db_instance = db()
@@ -72,10 +79,14 @@ def main(bind, app, coordinator_port, stun_port, web_port, db, proxy_protocol):
 
     CoordinatorProtocol.proxy_protocol = proxy_protocol
     StunProtocol.proxy_protocol = proxy_protocol
+    TurnProtocol.proxy_protocol = proxy_protocol
 
     if isinstance(app_instance, CoordinatorApplication):
         port = coordinator_port
         protocol = CoordinatorProtocol
+    elif isinstance(app_instance, TurnApplication):
+        port = turn_port
+        protocol = TurnProtocol
     else:
         port = stun_port
         protocol = StunProtocol

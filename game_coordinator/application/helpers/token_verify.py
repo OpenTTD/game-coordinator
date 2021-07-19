@@ -91,6 +91,9 @@ class TokenVerify:
                 self._protocol_version, self.verify_token
             )
 
+        if self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
+            self._server.connection_type = ConnectionType.CONNECTION_TYPE_TURN
+
         await self._server.send_register_ack(self._protocol_version)
         await self._application.database.stats_verify(
             self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()

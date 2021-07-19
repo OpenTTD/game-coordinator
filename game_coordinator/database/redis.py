@@ -4,6 +4,7 @@ import click
 import ipaddress
 import json
 import logging
+import secrets
 import time
 
 from aioredis import ResponseError
@@ -25,6 +26,8 @@ TTL_NEWGRF = TTL_SERVER + 60
 TTL_GC_ID = 60
 # Keep statistics for 30 days.
 TTL_STATS = 3600 * 24 * 30
+# Slightly more than the interval the TURN server announce itself.
+TTL_TURN_SERVER = 15
 
 
 class Database:
@@ -99,6 +102,11 @@ class Database:
                 if message["type"] != "message":
                     continue
 
+                if message["data"].startswith("turn-server:"):
+                    _, _, turn_server = message["data"].partition(":")
+
+                    await self.application.remove_turn_server(turn_server)
+
                 if message["data"].startswith("gc-newgrf:"):
                     _, _, grfid_md5sum = message["data"].partition(":")
                     grfid, _, md5sum = grfid_md5sum.partition("-")
@@ -114,6 +122,11 @@ class Database:
                     await self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
+        turn_servers = await self._redis.keys("turn-server:*")
+        for turn_server in turn_servers:
+            _, _, connection_string = turn_server.partition(":")
+            await self.application.add_turn_server(connection_string)
+
         newgrfs = await self._redis.keys("gc-newgrf:*")
         for newgrf in newgrfs:
             _, _, grfid_md5sum = newgrf.partition(":")
@@ -192,6 +205,7 @@ class Database:
 
     async def _follow_stream(self):
         lookup_table = {
+            "turn-server": self.application.add_turn_server,
             "new-direct-ip": self.application.update_external_direct_ip,
             "update": self.application.update_external_server,
             "update-newgrf": self.application.update_newgrf_external_server,
@@ -200,6 +214,7 @@ class Database:
             "stun-result": self.application.stun_result,
             "send-stun-request": self.application.send_server_stun_request,
             "send-stun-connect": self.application.send_server_stun_connect,
+            "send-turn-connect": self.application.send_server_turn_connect,
             "send-connect-failed": self.application.send_server_connect_failed,
         }
         current_id = "$"
@@ -231,6 +246,10 @@ class Database:
         await self._redis.xadd(
             "gc-stream", {"gc-id": self._gc_id, "type": entry_type, "payload": json.dumps(payload)}, maxlen=1000
         )
+
+    async def announce_turn_server(self, connection_string):
+        if await self._redis.set(f"turn-server:{connection_string}", 1, ex=TTL_TURN_SERVER):
+            await self.add_to_stream("turn-server", {"connection_string": connection_string})
 
     async def newgrf_in_use(self, newgrf):
         await self._redis.expire(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}", TTL_NEWGRF)
@@ -316,7 +335,14 @@ class Database:
     async def stats_listing(self, game_info_version):
         await self._stats("listing", game_info_version)
 
-    async def _stats(self, key, subkey):
+    async def stats_turn(self, side):
+        await self._stats("turn", side)
+
+    async def stats_turn_usage(self, total_bytes, time_connected):
+        await self._stats("turn", "bytes", amount=total_bytes)
+        await self._stats("turn", "time", amount=int(time_connected))
+
+    async def _stats(self, key, subkey, amount=1):
         # Put all stats of a single day in one bucket.
         day_since_1970 = int(time.time()) // (3600 * 24)
 
@@ -324,7 +350,7 @@ class Database:
 
         # Keep statistics for one month.
         await self._redis.expire(key, TTL_STATS)
-        await self._redis.incr(key)
+        await self._redis.incr(key, amount)
 
     async def get_stats(self, key):
         result = {}
@@ -340,6 +366,20 @@ class Database:
             result[day_since_1970][subkey] = await self._redis.get(stat)
 
         return result
+
+    async def create_turn_ticket(self):
+        while True:
+            ticket_left = secrets.token_hex(8)
+            ticket_right = secrets.token_hex(8)
+            if await self._redis.set(f"turn-ticket:{ticket_left}", ticket_right, ex=10, nx=True):
+                break
+
+        return f"{ticket_left}:{ticket_right}"
+
+    async def validate_turn_ticket(self, ticket):
+        ticket_left, ticket_right = ticket.split(":")
+        validation = await self._redis.get(f"turn-ticket:{ticket_left}")
+        return validation == ticket_right
 
     async def stun_result(self, token, interface_number, peer_ip, peer_port):
         await self.add_to_stream(
@@ -376,6 +416,21 @@ class Database:
                 "interface_number": interface_number,
                 "peer_ip": peer_ip,
                 "peer_port": peer_port,
+            },
+        )
+
+    async def send_server_turn_connect(
+        self, server_id, protocol_version, token, tracking_number, ticket, connection_string
+    ):
+        await self.add_to_stream(
+            "send-turn-connect",
+            {
+                "server_id": server_id,
+                "protocol_version": protocol_version,
+                "token": token,
+                "tracking_number": tracking_number,
+                "ticket": ticket,
+                "connection_string": connection_string,
             },
         )
 

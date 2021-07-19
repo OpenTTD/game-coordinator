@@ -22,6 +22,9 @@ async def stats_handler(request):
             "listing": await DB_INSTANCE.get_stats("listing"),
             "connect": await DB_INSTANCE.get_stats("connect"),
             "connect-failed": await DB_INSTANCE.get_stats("connect-failed"),
+            "turn": await DB_INSTANCE.get_stats("turn"),
+            "turn-bytes": await DB_INSTANCE.get_stats("turn-bytes"),
+            "turn-time": await DB_INSTANCE.get_stats("turn-time"),
         }
     )
 

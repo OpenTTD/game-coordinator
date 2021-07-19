@@ -64,6 +64,11 @@ class ServerExternal:
             self.server_id, protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
         )
 
+    async def send_turn_connect(self, protocol_version, token, tracking_number, ticket, connection_string):
+        await self._application.database.send_server_turn_connect(
+            self.server_id, protocol_version, token, tracking_number, ticket, connection_string
+        )
+
     async def send_connect_failed(self, protocol_version, token):
         await self._application.database.send_server_connect_failed(self.server_id, protocol_version, token)
 
@@ -137,6 +142,11 @@ class Server:
     async def send_stun_connect(self, protocol_version, token, tracking_number, interface_number, peer_ip, peer_port):
         await self._source.protocol.send_PACKET_COORDINATOR_GC_STUN_CONNECT(
             protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
+        )
+
+    async def send_turn_connect(self, protocol_version, token, tracking_number, ticket, connection_string):
+        await self._source.protocol.send_PACKET_COORDINATOR_GC_TURN_CONNECT(
+            protocol_version, token, tracking_number, ticket, connection_string
         )
 
     async def send_connect_failed(self, protocol_version, token):
