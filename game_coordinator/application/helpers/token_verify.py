@@ -85,13 +85,13 @@ class TokenVerify:
                 task.cancel()
         self._pending_detection_tasks.clear()
 
-        if self._protocol_version == 3:
+        if self._protocol_version >= 3:
             # Ensure all STUN connections are closed.
             await self._source.protocol.send_PACKET_COORDINATOR_GC_CONNECT_FAILED(
                 self._protocol_version, self.verify_token
             )
 
-        if self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
+        if self._protocol_version >= 5 and self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_TURN
 
         await self._server.send_register_ack(self._protocol_version)

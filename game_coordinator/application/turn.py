@@ -15,7 +15,7 @@ _turn_address = None
 class Application:
     def __init__(self, database):
         if not _turn_address:
-            raise Exception("Please set --connection-string for this application")
+            raise Exception("Please set --turn-address for this application")
 
         self.database = database
         self.turn_address = _turn_address
