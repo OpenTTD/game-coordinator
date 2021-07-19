@@ -114,14 +114,13 @@ class Database:
                     await self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
-        servers = await self._redis.keys("gc-newgrf:*")
-        for server in servers:
-            _, _, grfid_md5sum = server.partition(":")
+        newgrfs = await self._redis.keys("gc-newgrf:*")
+        for newgrf in newgrfs:
+            _, _, grfid_md5sum = newgrf.partition(":")
             grfid, _, md5sum = grfid_md5sum.partition("-")
 
-            newgrf_lookup_str = await self._redis.get(server)
+            newgrf_lookup_str = await self._redis.get(newgrf)
             if newgrf_lookup_str is None:
-                # Server left in the meantime. The stream will update the rest.
                 continue
 
             newgrf_lookup = json.loads(newgrf_lookup_str)
