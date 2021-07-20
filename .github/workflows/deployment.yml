@@ -34,6 +34,14 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         name: StunServer
 
+    - name: Deploy on AWS (TurnServer)
+      uses: openttd/actions/deploy-aws@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        name: TurnServer
+
     - if: success()
       name: Deployment successful
       uses: openttd/actions/deployments-update@v2
