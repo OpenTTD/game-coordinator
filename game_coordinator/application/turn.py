@@ -8,6 +8,7 @@ from openttd_helpers import click_helper
 log = logging.getLogger(__name__)
 
 TTL = 15
+TIMEOUT = 20  # After how many seconds we give up on connecting client and server.
 
 _turn_address = None
 
@@ -82,8 +83,12 @@ class Application:
         await self._ticket_pair[ticket].protocol.send_PACKET_TURN_TURN_CONNECTED(protocol_version, str(source.ip))
         await self.database.stats_turn("two-sided")
 
+        del self._ticket_pair[ticket]
+
     async def _expire_ticket(self, ticket):
-        await asyncio.sleep(10)
+        await asyncio.sleep(TIMEOUT)
+
+        self._ticket_pair[ticket].protocol.transport.close()
 
         # Expire the ticket after 10 seconds if there was no match.
         del self._ticket_pair[ticket]

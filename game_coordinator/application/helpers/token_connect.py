@@ -6,6 +6,8 @@ from openttd_protocol.wire.exceptions import SocketClosed
 
 log = logging.getLogger(__name__)
 
+TIMEOUT = 20  # After how many seconds we give up on connecting client and server.
+
 
 class TokenConnect:
     def __init__(self, application, source, protocol_version, token, server):
@@ -70,7 +72,7 @@ class TokenConnect:
 
     async def _timeout(self):
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(TIMEOUT)
 
             # If we reach here, we haven't managed to get a connection within 10 seconds. Time to call it a day.
             self._timeout_task = None

@@ -371,7 +371,7 @@ class Database:
         while True:
             ticket_left = secrets.token_hex(8)
             ticket_right = secrets.token_hex(8)
-            if await self._redis.set(f"turn-ticket:{ticket_left}", ticket_right, ex=10, nx=True):
+            if await self._redis.set(f"turn-ticket:{ticket_left}", ticket_right, ex=30, nx=True):
                 break
 
         return f"{ticket_left}:{ticket_right}"
