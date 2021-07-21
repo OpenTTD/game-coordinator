@@ -310,9 +310,9 @@ class Database:
         # Keep track of the IP this server has.
         type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
         res = await self._redis.set(
-            f"gc-direct-{type}:{server_id}", json.dumps({"ip": str(server_ip), "port": server_port})
+            f"gc-direct-{type}:{server_id}", json.dumps({"ip": str(server_ip), "port": server_port}), nx=True
         )
-        if res > 0:
+        if res is not None:
             await self.add_to_stream(
                 "new-direct-ip", {"server_id": server_id, "type": type, "ip": str(server_ip), "port": server_port}
             )
