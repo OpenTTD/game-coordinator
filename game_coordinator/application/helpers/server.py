@@ -21,7 +21,7 @@ class ServerExternal:
         self.info = {}
         self.game_type = None
         self.server_id = server_id
-        self.direct_ips = []
+        self.direct_ips = set()
 
         if self.server_id[0] == "+":
             self.connection_string = self.server_id
@@ -53,7 +53,7 @@ class ServerExternal:
         if ip_type == "ipv6":
             ip = f"[{ip}]"
 
-        self.direct_ips.append({"ip": ip, "port": port})
+        self.direct_ips.add(f"{ip}:{port}")
         self.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
 
     async def send_stun_request(self, protocol_version, token):
@@ -83,7 +83,7 @@ class Server:
         self.game_type = game_type
         self.server_id = server_id
         self.server_port = server_port
-        self.direct_ips = []
+        self.direct_ips = set()
 
         if invite_code_secret:
             self.connection_string = server_id

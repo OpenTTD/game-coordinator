@@ -35,8 +35,11 @@ class TokenConnect:
         # needed.
         self._connect_methods = asyncio.Queue()
         for direct_ip in self._server.direct_ips:
-            ip_type = "ipv6" if direct_ip["ip"][0] == "[" else "ipv4"
-            self._connect_methods.put_nowait((f"direct-{ip_type}", lambda: self._connect_direct_connect(direct_ip)))
+            server_ip, _, server_port = direct_ip.rpartition(":")
+            ip_type = "ipv6" if server_ip == "[" else "ipv4"
+            self._connect_methods.put_nowait(
+                (f"direct-{ip_type}", lambda: self._connect_direct_connect(server_ip, int(server_port)))
+            )
         self._connect_methods.put_nowait(("stun-request", lambda: self._connect_stun_request()))
 
         # The peer-type of STUN requests we allow to match.
@@ -135,9 +138,9 @@ class TokenConnect:
         self._tracking_number += 1
         self._connect_next_event.set()
 
-    async def _connect_direct_connect(self, server):
+    async def _connect_direct_connect(self, server_ip, server_port):
         await self._source.protocol.send_PACKET_COORDINATOR_GC_DIRECT_CONNECT(
-            self._protocol_version, self.client_token, self._tracking_number, server["ip"], server["port"]
+            self._protocol_version, self.client_token, self._tracking_number, server_ip, server_port
         )
 
     async def _connect_stun_request(self):
