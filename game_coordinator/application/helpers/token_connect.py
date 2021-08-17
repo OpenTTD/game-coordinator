@@ -212,7 +212,12 @@ class TokenConnect:
         except SocketClosed:
             # If the client already left, that is fine.
             pass
-        await self._server.send_connect_failed(self._protocol_version, self.server_token)
+
+        try:
+            await self._server.send_connect_failed(self._protocol_version, self.server_token)
+        except SocketClosed:
+            # If the server already left, that is fine.
+            pass
 
         await self._application.database.stats_connect("closed" if on_request else "failed", False)
 
