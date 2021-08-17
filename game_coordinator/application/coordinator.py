@@ -54,6 +54,14 @@ class Application:
     def delete_token(self, token):
         del self._tokens[token]
 
+    def _remove_broken_server(self, server_id, error_no, error_detail):
+        broken_server = self._servers[server_id]
+        if isinstance(broken_server, ServerExternal):
+            return
+
+        asyncio.create_task(broken_server.send_error_and_close(error_no, error_detail))
+        del self._servers[server_id]
+
     async def add_turn_server(self, connection_string):
         if connection_string not in self.turn_servers:
             self.turn_servers.append(connection_string)
@@ -76,8 +84,15 @@ class Application:
             self._servers[server_id] = ServerExternal(self, server_id)
 
         if not isinstance(self._servers[server_id], ServerExternal):
-            log.error("Internal error: update_external_server() called on a server managed by us")
-            return
+            # Two servers could announce themselves with the same server-id.
+            # Best way to deal with the situation is to assume the new instance
+            # is in good contact with the server, and for us to drop our
+            # connection with the old.
+
+            self._remove_broken_server(
+                server_id, NetworkCoordinatorErrorType.NETWORK_COORDINATOR_ERROR_REUSE_OF_INVITE_CODE, server_id
+            )
+            self._servers[server_id] = ServerExternal(self, server_id)
 
         await self._servers[server_id].update(info)
 
@@ -86,8 +101,15 @@ class Application:
             self._servers[server_id] = ServerExternal(self, server_id)
 
         if not isinstance(self._servers[server_id], ServerExternal):
-            log.error("Internal error: update_external_server() called on a server managed by us")
-            return
+            # Two servers could announce themselves with the same server-id.
+            # Best way to deal with the situation is to assume the new instance
+            # is in good contact with the server, and for us to drop our
+            # connection with the old.
+
+            self._remove_broken_server(
+                server_id, NetworkCoordinatorErrorType.NETWORK_COORDINATOR_ERROR_REUSE_OF_INVITE_CODE, server_id
+            )
+            self._servers[server_id] = ServerExternal(self, server_id)
 
         await self._servers[server_id].update_newgrf(newgrfs_indexed)
 
@@ -183,7 +205,19 @@ class Application:
 
             invite_code_secret = generate_invite_code_secret(self._shared_secret, server_id)
 
-        source.server = Server(self, server_id, game_type, source, server_port, invite_code_secret)
+        source.server = Server(self, server_id, game_type, source, protocol_version, server_port, invite_code_secret)
+
+        if source.server.server_id in self._servers:
+            # We replace a server already known; possibly two servers are using
+            # the same invite-code. There is not much we can do about this,
+            # other than disconnect the old, and hope the server-owner notices
+            # that they are constantly battling for the same invite-code.
+            self._remove_broken_server(
+                source.server.server_id,
+                NetworkCoordinatorErrorType.NETWORK_COORDINATOR_ERROR_REUSE_OF_INVITE_CODE,
+                source.server.server_id,
+            )
+
         self._servers[source.server.server_id] = source.server
 
         # Find an unused token.

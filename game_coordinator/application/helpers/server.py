@@ -6,6 +6,7 @@ from openttd_protocol.protocol.coordinator import (
     NewGRFSerializationType,
     ServerGameType,
 )
+from openttd_protocol.wire.exceptions import SocketClosed
 
 log = logging.getLogger(__name__)
 
@@ -74,10 +75,11 @@ class ServerExternal:
 
 
 class Server:
-    def __init__(self, application, server_id, game_type, source, server_port, invite_code_secret):
+    def __init__(self, application, server_id, game_type, source, protocol_version, server_port, invite_code_secret):
         self._application = application
         self._source = source
         self._invite_code_secret = invite_code_secret
+        self._protocol_version = protocol_version
 
         self.info = {}
         self.game_type = game_type
@@ -93,6 +95,24 @@ class Server:
 
     async def disconnect(self):
         await self._application.database.server_offline(self.server_id)
+
+    async def send_error_and_close(self, error_no, error_detail):
+        try:
+            await self._source.protocol.send_PACKET_COORDINATOR_GC_ERROR(
+                self._protocol_version,
+                error_no,
+                error_detail,
+            )
+
+            # Give it a second for the above packet to arrive.
+            await asyncio.sleep(1)
+        except SocketClosed:
+            # Socket already closed, so we can clean up the socket.
+            pass
+
+        # Make sure disconnect() is not called on the object anymore.
+        del self._source.server
+        self._source.protocol.transport.abort()
 
     async def update_newgrf(self, newgrf_serialization_type, newgrfs):
         if newgrfs is None:
