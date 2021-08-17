@@ -5,6 +5,7 @@ import pproxy
 
 from openttd_protocol.protocol.coordinator import ConnectionType
 from openttd_protocol.protocol.game import GameProtocol
+from openttd_protocol.wire.exceptions import SocketClosed
 
 log = logging.getLogger(__name__)
 
@@ -85,19 +86,23 @@ class TokenVerify:
                 task.cancel()
         self._pending_detection_tasks.clear()
 
-        if self._protocol_version >= 3:
-            # Ensure all STUN connections are closed.
-            await self._source.protocol.send_PACKET_COORDINATOR_GC_CONNECT_FAILED(
-                self._protocol_version, self.verify_token
+        try:
+            if self._protocol_version >= 3:
+                # Ensure all STUN connections are closed.
+                await self._source.protocol.send_PACKET_COORDINATOR_GC_CONNECT_FAILED(
+                    self._protocol_version, self.verify_token
+                )
+
+            if self._protocol_version >= 5 and self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
+                self._server.connection_type = ConnectionType.CONNECTION_TYPE_TURN
+
+            await self._server.send_register_ack(self._protocol_version)
+            await self._application.database.stats_verify(
+                self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()
             )
-
-        if self._protocol_version >= 5 and self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
-            self._server.connection_type = ConnectionType.CONNECTION_TYPE_TURN
-
-        await self._server.send_register_ack(self._protocol_version)
-        await self._application.database.stats_verify(
-            self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()
-        )
+        except SocketClosed:
+            # Server already closed the connection, nothing to conclude.
+            await self._application.database.stats_verify("closed")
 
     async def _create_connection(self, server_ip, server_port):
         connected = asyncio.Event()
