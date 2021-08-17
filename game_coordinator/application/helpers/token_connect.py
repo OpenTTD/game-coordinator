@@ -113,6 +113,12 @@ class TokenConnect:
                 self._connect_task = None
                 asyncio.create_task(self._connect_failed())
                 break
+            except SocketClosed:
+                # Either of the two sides closed the Game Coordinator
+                # connection. So cancel the connection attempt.
+                self._connect_task = None
+                asyncio.create_task(self._connect_failed(True))
+                break
             except Exception:
                 log.exception("Exception during _connect_next_wait()")
 
