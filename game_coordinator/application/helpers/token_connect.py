@@ -60,6 +60,9 @@ class TokenConnect:
         await self._application.database.stats_connect(self._connect_method, True)
 
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
+        if peer_type == "ipv6":
+            peer_ip = f"[{peer_ip}]"
+
         self._stun_result[prefix][peer_type] = (interface_number, peer_ip, peer_port)
 
         for ip_type in self._stun_ip_type:
