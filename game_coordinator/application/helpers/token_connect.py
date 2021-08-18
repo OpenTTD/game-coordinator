@@ -36,7 +36,7 @@ class TokenConnect:
         self._connect_methods = asyncio.Queue()
         for direct_ip in self._server.direct_ips:
             server_ip, _, server_port = direct_ip.rpartition(":")
-            ip_type = "ipv6" if server_ip == "[" else "ipv4"
+            ip_type = "ipv6" if server_ip.startswith("[") else "ipv4"
             self._connect_methods.put_nowait(
                 (f"direct-{ip_type}", lambda: self._connect_direct_connect(server_ip, int(server_port)))
             )
