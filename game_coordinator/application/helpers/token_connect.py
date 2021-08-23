@@ -76,6 +76,10 @@ class TokenConnect:
                     (f"stun-{ip_type}", lambda: self._connect_stun_connect(client_peer, server_peer))
                 )
 
+    async def stun_result_concluded(self, interface_number, result):
+        # Not yet used.
+        pass
+
     async def _timeout(self):
         try:
             await asyncio.sleep(TIMEOUT)
