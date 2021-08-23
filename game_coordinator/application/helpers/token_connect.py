@@ -151,6 +151,7 @@ class TokenConnect:
     async def _connect_direct_connect(self, server_ip, server_port):
         ip_type = "ipv6" if server_ip.startswith("[") else "ipv4"
         self._connect_method = f"direct-{ip_type}"
+        self._connect_result_event.clear()
 
         await self._source.protocol.send_PACKET_COORDINATOR_GC_DIRECT_CONNECT(
             self._protocol_version, self.client_token, self._tracking_number, server_ip, server_port
@@ -162,6 +163,7 @@ class TokenConnect:
 
     async def _connect_stun_connect(self, ip_type):
         self._connect_method = f"stun-{ip_type}"
+        self._connect_result_event.clear()
 
         client_peer = self._stun_result["C"][ip_type]
         server_peer = self._stun_result["S"][ip_type]
@@ -185,6 +187,7 @@ class TokenConnect:
 
     async def _connect_turn_connect(self):
         self._connect_method = "turn"
+        self._connect_result_event.clear()
 
         if self._protocol_version < 5 or not self._application.turn_servers:
             await self.connect_failed(self._tracking_number)
