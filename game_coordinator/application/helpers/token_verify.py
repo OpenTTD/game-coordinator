@@ -65,7 +65,7 @@ class TokenVerify:
         task = asyncio.create_task(self._start_detection(interface_number, peer_ip))
         self._pending_detection_tasks.append(task)
 
-    async def stun_result_concluded(self, interface_number, result):
+    async def stun_result_concluded(self, prefix, interface_number, result):
         if result:
             # Successful STUN results will call stun_result() eventually too.
             return
