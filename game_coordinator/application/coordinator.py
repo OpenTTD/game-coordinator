@@ -311,11 +311,12 @@ class Application:
     async def receive_PACKET_COORDINATOR_SERCLI_STUN_RESULT(
         self, source, protocol_version, token, interface_number, result
     ):
-        # This informs us that the client has did his STUN request. We
-        # currently take no action on this packet, but it could be used to
-        # know there should be a STUN result or to continue with the next
-        # available method.
-        pass
+        token = self._tokens.get(token[1:])
+        if token is None:
+            # Don't close connection, as this might just be a delayed result.
+            return
+
+        await token.stun_result_concluded(interface_number, result)
 
 
 @click_helper.extend

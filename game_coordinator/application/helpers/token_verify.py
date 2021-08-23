@@ -9,6 +9,11 @@ from openttd_protocol.wire.exceptions import SocketClosed
 
 log = logging.getLogger(__name__)
 
+# Time before we conclude. 3 seconds of direct-connect + 3 seconds to get STUN results + a bit of margin.
+TIMEOUT_VERIFY = 7
+# Time before we give up on a direct-connect attempt.
+TIMEOUT_DIRECT_CONNECT = 3
+
 
 class DetectGame:
     def __init__(self, connected):
@@ -36,9 +41,12 @@ class TokenVerify:
 
     async def connect(self):
         self._pending_detection_tasks = []
+        self._stun_concluded = set()
+
+        self._stun_done_event = asyncio.Event()
 
         if self._protocol_version == 2:
-            task = asyncio.create_task(self._start_detection(self._source.ip))
+            task = asyncio.create_task(self._start_detection(0, self._source.ip))
             self._pending_detection_tasks.append(task)
         else:
             await self._source.protocol.send_PACKET_COORDINATOR_GC_STUN_REQUEST(
@@ -54,12 +62,23 @@ class TokenVerify:
         if self._server.connection_type == ConnectionType.CONNECTION_TYPE_ISOLATED:
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_STUN
 
-        task = asyncio.create_task(self._start_detection(peer_ip))
+        task = asyncio.create_task(self._start_detection(interface_number, peer_ip))
         self._pending_detection_tasks.append(task)
 
-    async def _start_detection(self, server_ip):
+    async def stun_result_concluded(self, interface_number, result):
+        if result:
+            # Successful STUN results will call stun_result() eventually too.
+            return
+
+        self._stun_concluded.add(interface_number)
+
+        # We expect two STUN results (IPv4 + IPv6).
+        if len(self._stun_concluded) == 2:
+            self._stun_done_event.set()
+
+    async def _start_detection(self, interface_number, server_ip):
         try:
-            await asyncio.wait_for(self._create_connection(server_ip, self._server.server_port), 1)
+            await asyncio.wait_for(self._create_connection(server_ip, self._server.server_port), TIMEOUT_DIRECT_CONNECT)
 
             # We found a direct-ip to connect to. That is always the better one to use.
             self._server.connection_type = ConnectionType.CONNECTION_TYPE_DIRECT
@@ -77,9 +96,23 @@ class TokenVerify:
         except Exception:
             log.exception("Internal error: start_detection triggered an exception")
 
+        self._stun_concluded.add(interface_number)
+
+        # We expect two STUN results (IPv4 + IPv6), unless we have a server on an old protocol.
+        if len(self._stun_concluded) == 2 or self._protocol_version == 2:
+            self._stun_done_event.set()
+
+        self._pending_detection_tasks.remove(asyncio.current_task())
+
     async def _conclude_detection(self):
-        # Give STUN 2 seconds to get back to us; after that, send conclusion.
-        await asyncio.sleep(2)
+        try:
+            await asyncio.wait_for(self._stun_done_event.wait(), TIMEOUT_VERIFY)
+        except asyncio.TimeoutError:
+            # The STUN result + direct-ip detection should conclude within
+            # TIMEOUT_VERIFY, but did not. So this means that we got stuck
+            # somewhere. Best thing we can do is just to continue on with
+            # the information we have.
+            pass
 
         for task in self._pending_detection_tasks:
             if not task.done():
