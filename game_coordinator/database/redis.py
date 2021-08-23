@@ -327,8 +327,14 @@ class Database:
     async def stats_verify(self, connection_type_name):
         await self._stats("verify", connection_type_name)
 
-    async def stats_connect(self, method_name, result):
-        key = "connect" if result else "connect-failed"
+    async def stats_connect(self, method_name, result, final=True):
+        if result:
+            # Successful connections are always final.
+            key = "connect"
+        elif final:
+            key = "connect-failed"
+        else:
+            key = "connect-method-failed"
 
         await self._stats(key, method_name)
 

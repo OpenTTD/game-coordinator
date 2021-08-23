@@ -80,9 +80,9 @@ class TokenConnect:
         try:
             await asyncio.sleep(TIMEOUT)
 
-            # If we reach here, we haven't managed to get a connection within 10 seconds. Time to call it a day.
+            # If we reach here, we haven't managed to get a connection within TIMEOUT seconds. Time to call it a day.
             self._timeout_task = None
-            await self._connect_failed()
+            await self._connect_failed("timeout")
         except Exception:
             log.exception("Exception during _timeout()")
 
@@ -111,13 +111,13 @@ class TokenConnect:
                     # If TURN failed, we have no other method left, so fail the attempt.
 
                 self._connect_task = None
-                asyncio.create_task(self._connect_failed())
+                asyncio.create_task(self._connect_failed("out-of-methods"))
                 break
             except SocketClosed:
                 # Either of the two sides closed the Game Coordinator
                 # connection. So cancel the connection attempt.
                 self._connect_task = None
-                asyncio.create_task(self._connect_failed(True))
+                asyncio.create_task(self._connect_failed("closed"))
                 break
             except Exception:
                 log.exception("Exception during _connect_next_wait()")
@@ -132,7 +132,7 @@ class TokenConnect:
     async def connect_failed(self, tracking_number):
         if tracking_number == 0:
             # Client requested we stop with this connection attempt. So clean it up!
-            asyncio.create_task(self._connect_failed(True))
+            asyncio.create_task(self._connect_failed("stop"))
             return
 
         # Check if this is our current attempt. Server and client send
@@ -141,7 +141,7 @@ class TokenConnect:
         if tracking_number != self._tracking_number:
             return
 
-        await self._application.database.stats_connect(self._connect_method, False)
+        await self._application.database.stats_connect(self._connect_method, False, False)
 
         # Try the next attempt now.
         self._tracking_number += 1
@@ -197,7 +197,7 @@ class TokenConnect:
             connection_string,
         )
 
-    async def _connect_failed(self, on_request=False):
+    async def _connect_failed(self, stats_type):
         if self._connect_task:
             self._connect_task.cancel()
             self._connect_task = None
@@ -219,6 +219,6 @@ class TokenConnect:
             # If the server already left, that is fine.
             pass
 
-        await self._application.database.stats_connect("closed" if on_request else "failed", False)
+        await self._application.database.stats_connect(stats_type, False)
 
         self._application.delete_token(self.token)
