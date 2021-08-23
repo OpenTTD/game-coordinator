@@ -311,12 +311,13 @@ class Application:
     async def receive_PACKET_COORDINATOR_SERCLI_STUN_RESULT(
         self, source, protocol_version, token, interface_number, result
     ):
+        prefix = token[0]
         token = self._tokens.get(token[1:])
         if token is None:
             # Don't close connection, as this might just be a delayed result.
             return
 
-        await token.stun_result_concluded(interface_number, result)
+        await token.stun_result_concluded(prefix, interface_number, result)
 
 
 @click_helper.extend
