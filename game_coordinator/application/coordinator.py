@@ -277,7 +277,7 @@ class Application:
         await source.protocol.send_PACKET_COORDINATOR_GC_LISTING(
             protocol_version, game_info_version, servers_match + servers_other, self._newgrf_lookup_table
         )
-        await self.database.stats_listing(game_info_version)
+        await self.database.stats_listing(game_info_version, openttd_version)
 
     async def receive_PACKET_COORDINATOR_CLIENT_CONNECT(self, source, protocol_version, invite_code):
         if not invite_code or invite_code[0] != "+" or invite_code not in self._servers:

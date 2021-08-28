@@ -20,6 +20,7 @@ async def stats_handler(request):
         {
             "verify": await DB_INSTANCE.get_stats("verify"),
             "listing": await DB_INSTANCE.get_stats("listing"),
+            "listing-version": await DB_INSTANCE.get_stats("listing-version"),
             "connect": await DB_INSTANCE.get_stats("connect"),
             "connect-failed": await DB_INSTANCE.get_stats("connect-failed"),
             "connect-method-failed": await DB_INSTANCE.get_stats("connect-method-failed"),
