@@ -21,6 +21,9 @@ class TokenConnect:
         self.client_token = f"C{self.token}"
         self.server_token = f"S{self.token}"
 
+    def delete_client_token(self):
+        del self._source.client.connections[self._server.server_id]
+
     async def connect(self):
         self._tracking_number = 1
         self._connect_result_event = asyncio.Event()
@@ -50,6 +53,9 @@ class TokenConnect:
         self._timeout_task = None
 
         await self._application.database.stats_connect(self._connect_method, True)
+
+    async def abort_attempt(self):
+        await self._connect_give_up("abort")
 
     async def connect_failed(self, tracking_number):
         if tracking_number == 0:
