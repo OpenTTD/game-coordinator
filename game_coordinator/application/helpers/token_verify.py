@@ -28,6 +28,11 @@ class DetectGame:
         # Inform caller that we have successful connected to the valid server.
         self._connected.set()
 
+    async def receive_PACKET_SERVER_SHUTDOWN(self, source):
+        source.protocol.transport.close()
+
+        # Let the timeout hit. It doesn't matter anyway.
+
 
 class TokenVerify:
     def __init__(self, application, source, protocol_version, token, server):
