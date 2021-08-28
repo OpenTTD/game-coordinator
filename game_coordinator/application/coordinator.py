@@ -198,6 +198,22 @@ class Application:
         asyncio.create_task(self._servers[server_id].disconnect())
         del self._servers[server_id]
 
+    async def gc_connect_failed(self, token, tracking_number):
+        token = self._tokens.get(token)
+        if token is None:
+            # Assume that another instance is handling this token.
+            return
+
+        await token.connect_failed(tracking_number)
+
+    async def gc_stun_result(self, prefix, token, interface_number, result):
+        token = self._tokens.get(token)
+        if token is None:
+            # Assume that another instance is handling this token.
+            return
+
+        await token.stun_result_concluded(prefix, interface_number, result)
+
     async def receive_PACKET_COORDINATOR_SERVER_REGISTER(
         self, source, protocol_version, game_type, server_port, invite_code, invite_code_secret
     ):
@@ -312,13 +328,16 @@ class Application:
         await token.connect()
 
     async def receive_PACKET_COORDINATOR_SERCLI_CONNECT_FAILED(self, source, protocol_version, token, tracking_number):
-        token = self._tokens.get(token[1:])
-        if token is None:
-            # Don't close connection, as this might just be a delayed failure.
+        if token[1:] not in self._tokens:
+            if token[0] == "S":
+                # The server tells us information about a token we do not track.
+                # So broadcast it to the other instances, as they might want to
+                # know.
+                await self.database.gc_connect_failed(token[1:], tracking_number)
             return
 
         # Client or server noticed the connection attempt failed.
-        await token.connect_failed(tracking_number)
+        await self.gc_connect_failed(token[1:], tracking_number)
 
     async def receive_PACKET_COORDINATOR_CLIENT_CONNECTED(self, source, protocol_version, token):
         token = self._tokens.get(token[1:])
@@ -334,12 +353,15 @@ class Application:
         self, source, protocol_version, token, interface_number, result
     ):
         prefix = token[0]
-        token = self._tokens.get(token[1:])
-        if token is None:
-            # Don't close connection, as this might just be a delayed result.
+        if token[1:] not in self._tokens:
+            if token[0] == "S":
+                # The server tells us information about a token we do not track.
+                # So broadcast it to the other instances, as they might want to
+                # know.
+                await self.database.gc_stun_result(prefix, token[1:], interface_number, result)
             return
 
-        await token.stun_result_concluded(prefix, interface_number, result)
+        await self.gc_stun_result(prefix, token[1:], interface_number, result)
 
 
 @click_helper.extend

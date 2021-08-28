@@ -212,6 +212,8 @@ class Database:
             "newgrf-added": self.application.newgrf_added,
             "delete": self.application.remove_server,
             "stun-result": self.application.stun_result,
+            "gc-stun-result": self.application.gc_stun_result,
+            "gc-connect-failed": self.application.gc_connect_failed,
             "send-stun-request": self.application.send_server_stun_request,
             "send-stun-connect": self.application.send_server_stun_connect,
             "send-turn-connect": self.application.send_server_turn_connect,
@@ -397,6 +399,26 @@ class Database:
                 "peer_type": "ipv6" if isinstance(peer_ip, ipaddress.IPv6Address) else "ipv4",
                 "peer_ip": str(peer_ip),
                 "peer_port": peer_port,
+            },
+        )
+
+    async def gc_connect_failed(self, token, tracking_number):
+        await self.add_to_stream(
+            "gc-connect-failed",
+            {
+                "token": token,
+                "tracking_number": tracking_number,
+            },
+        )
+
+    async def gc_stun_result(self, prefix, token, interface_number, result):
+        await self.add_to_stream(
+            "gc-stun-result",
+            {
+                "prefix": prefix,
+                "token": token,
+                "interface_number": interface_number,
+                "result": result,
             },
         )
 
