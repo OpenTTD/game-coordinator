@@ -39,6 +39,9 @@ class TokenVerify:
 
         self.verify_token = f"V{self.token}"
 
+    def delete_client_token(self):
+        pass
+
     async def connect(self):
         self._pending_detection_tasks = []
         self._stun_concluded = set()
@@ -136,6 +139,8 @@ class TokenVerify:
         except SocketClosed:
             # Server already closed the connection, nothing to conclude.
             await self._application.database.stats_verify("closed")
+
+        self._application.delete_token(self.token)
 
     async def _create_connection(self, server_ip, server_port):
         connected = asyncio.Event()
