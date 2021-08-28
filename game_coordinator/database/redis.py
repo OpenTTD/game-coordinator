@@ -338,8 +338,9 @@ class Database:
 
         await self._stats(key, method_name)
 
-    async def stats_listing(self, game_info_version):
+    async def stats_listing(self, game_info_version, openttd_version):
         await self._stats("listing", game_info_version)
+        await self._stats("listing-version", openttd_version)
 
     async def stats_turn(self, side):
         await self._stats("turn", side)
