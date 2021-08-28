@@ -21,6 +21,9 @@ class TokenConnect:
         self.client_token = f"C{self.token}"
         self.server_token = f"S{self.token}"
 
+        self._connect_task = None
+        self._timeout_task = None
+
     def delete_client_token(self):
         del self._source.client.connections[self._server.server_id]
 
