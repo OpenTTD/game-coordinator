@@ -9,6 +9,7 @@ from openttd_protocol.protocol.coordinator import (
     NetworkCoordinatorErrorType,
 )
 
+from .helpers.client import Client
 from .helpers.invite_code import (
     generate_invite_code,
     generate_invite_code_secret,
@@ -52,6 +53,7 @@ class Application:
             asyncio.create_task(self.remove_server(source.server.server_id))
 
     def delete_token(self, token):
+        self._tokens[token].delete_client_token()
         del self._tokens[token]
 
     def _remove_broken_server(self, server_id, error_no, error_detail):
@@ -275,14 +277,24 @@ class Application:
             source.protocol.transport.close()
             return
 
+        if not hasattr(source, "client"):
+            source.client = Client()
+
         # Find an unused token.
         while True:
             token = secrets.token_hex(16)
             if token not in self._tokens:
                 break
 
+        # A client is always connected to a single GC instance. So on that
+        # instance we track if the client tries to connect to the same server
+        # twice. If so, we abort the previous connection and create a new one.
+        if invite_code in source.client.connections:
+            await source.client.connections[invite_code].abort_attempt()
+
         # Create a token to connect server and client.
         token = TokenConnect(self, source, protocol_version, token, self._servers[invite_code])
+        source.client.connections[invite_code] = token
         self._tokens[token.token] = token
 
         # Inform client of token value, and start the connection attempt(s).
