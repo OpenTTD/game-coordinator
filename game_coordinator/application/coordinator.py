@@ -284,7 +284,7 @@ class Application:
             await source.protocol.send_PACKET_COORDINATOR_GC_ERROR(
                 protocol_version, NetworkCoordinatorErrorType.NETWORK_COORDINATOR_ERROR_INVALID_INVITE_CODE, invite_code
             )
-            source.protocol.transport.close()
+            # Don't close connection, as the server might just be restarting.
             return
 
         if not hasattr(source, "client"):
