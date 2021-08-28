@@ -54,8 +54,8 @@ class TokenConnect:
 
         await self._application.database.stats_connect(self._connect_method, True)
 
-    async def abort_attempt(self):
-        await self._connect_give_up("abort")
+    async def abort_attempt(self, reason):
+        await self._connect_give_up(f"abort-{reason}")
 
     async def connect_failed(self, tracking_number):
         if tracking_number == 0:

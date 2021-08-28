@@ -185,6 +185,16 @@ class Application:
         if server_id not in self._servers:
             return
 
+        # Check if there are any pending connections to this server.
+        abort_tokens = []
+        for token in self._tokens.values():
+            if token._server.server_id == server_id:
+                abort_tokens.append(token)
+
+        # Abort all of those pending connections.
+        for token in abort_tokens:
+            await token.abort_attempt("server")
+
         asyncio.create_task(self._servers[server_id].disconnect())
         del self._servers[server_id]
 
@@ -290,7 +300,7 @@ class Application:
         # instance we track if the client tries to connect to the same server
         # twice. If so, we abort the previous connection and create a new one.
         if invite_code in source.client.connections:
-            await source.client.connections[invite_code].abort_attempt()
+            await source.client.connections[invite_code].abort_attempt("client")
 
         # Create a token to connect server and client.
         token = TokenConnect(self, source, protocol_version, token, self._servers[invite_code])

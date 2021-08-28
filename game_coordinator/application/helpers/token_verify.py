@@ -61,7 +61,16 @@ class TokenVerify:
                 self._protocol_version, self.verify_token
             )
 
-        asyncio.create_task(self._conclude_detection())
+        self._conclude_task = asyncio.create_task(self._conclude_detection())
+
+    async def abort_attempt(self, reason):
+        self._conclude_task.cancel()
+        for task in self._pending_detection_tasks:
+            if not task.done():
+                task.cancel()
+
+        await self._application.database.stats_verify("abort")
+        self._application.delete_token(self.token)
 
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
         peer_ip = ipaddress.IPv6Address(peer_ip) if peer_type == "ipv6" else ipaddress.IPv4Address(peer_ip)
