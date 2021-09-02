@@ -233,9 +233,16 @@ class Application:
 
             invite_code_secret = generate_invite_code_secret(self._shared_secret, server_id)
 
+        old_server_id = source.server.server_id if hasattr(source, "server") else None
+
         source.server = Server(self, server_id, game_type, source, protocol_version, server_port, invite_code_secret)
 
-        if source.server.server_id in self._servers:
+        if source.server.server_id == old_server_id:
+            # If the old server-id is the same, it means this server was
+            # already registered via this connection, and the user is most
+            # likely changing something like "game-type".
+            pass
+        elif source.server.server_id in self._servers:
             # We replace a server already known; possibly two servers are using
             # the same invite-code. There is not much we can do about this,
             # other than disconnect the old, and hope the server-owner notices
