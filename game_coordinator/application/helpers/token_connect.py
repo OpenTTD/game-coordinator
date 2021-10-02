@@ -23,6 +23,7 @@ class TokenConnect:
 
         self._connect_task = None
         self._timeout_task = None
+        self._given_up = False
 
     def delete_client_token(self):
         del self._source.client.connections[self._server.server_id]
@@ -50,6 +51,7 @@ class TokenConnect:
         self._timeout_task = asyncio.create_task(self._timeout())
 
     async def connected(self):
+        self._given_up = True
         self._connect_task.cancel()
         self._timeout_task.cancel()
         self._connect_task = None
@@ -58,7 +60,7 @@ class TokenConnect:
         await self._application.database.stats_connect(self._connect_method, True)
 
     async def abort_attempt(self, reason):
-        await self._connect_give_up(f"abort-{reason}")
+        asyncio.create_task(self._connect_give_up(f"abort-{reason}"))
 
     async def connect_failed(self, tracking_number):
         if tracking_number == 0:
@@ -112,7 +114,7 @@ class TokenConnect:
 
             # If we reach here, we haven't managed to get a connection within TIMEOUT seconds. Time to call it a day.
             self._timeout_task = None
-            await self._connect_give_up("timeout")
+            asyncio.create_task(self._connect_give_up("timeout"))
         except Exception:
             log.exception("Exception during _timeout()")
 
@@ -234,6 +236,14 @@ class TokenConnect:
         )
 
     async def _connect_give_up(self, failure_reason):
+        # Because we are async, it can happen more than one way suggests we
+        # should give up. For example, a user sends a "stop", but directly
+        # after that reconnects. This triggers an "abort". Both tasks are
+        # still pending, so ignore "abort" after processing "stop".
+        if self._given_up:
+            return
+        self._given_up = True
+
         if self._connect_task:
             self._connect_task.cancel()
             self._connect_task = None
