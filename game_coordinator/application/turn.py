@@ -46,6 +46,8 @@ class Application:
         while True:
             try:
                 await self.database.announce_turn_server(self.turn_address)
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 log.exception("System co-routine failed, killing server ..")
 

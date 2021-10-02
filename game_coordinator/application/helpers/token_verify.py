@@ -107,6 +107,8 @@ class TokenVerify:
 
             ip_type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
             await self._application.database.stats_verify(f"direct-{ip_type}")
+        except asyncio.CancelledError:
+            raise
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
             # These all indicate a connection could not be created, so the server is not reachable.
             pass

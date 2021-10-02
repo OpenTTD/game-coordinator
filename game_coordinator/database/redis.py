@@ -67,6 +67,8 @@ class Database:
     async def _guard(self, coroutine):
         try:
             await coroutine
+        except asyncio.CancelledError:
+            raise
         except Exception:
             log.exception("System co-routine failed, killing server ..")
 
