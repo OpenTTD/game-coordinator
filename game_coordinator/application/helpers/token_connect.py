@@ -115,12 +115,16 @@ class TokenConnect:
             # If we reach here, we haven't managed to get a connection within TIMEOUT seconds. Time to call it a day.
             self._timeout_task = None
             asyncio.create_task(self._connect_give_up("timeout"))
+        except asyncio.CancelledError:
+            raise
         except Exception:
             log.exception("Exception during _timeout()")
 
     async def _connect_guard(self):
         try:
             await self._connect()
+        except asyncio.CancelledError:
+            raise
         except SocketClosed:
             # Either of the two sides closed the Game Coordinator
             # connection. So cancel the connection attempt.
