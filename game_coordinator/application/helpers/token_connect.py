@@ -162,6 +162,10 @@ class TokenConnect:
         self._connect_method = f"direct-{ip_type}"
         self._connect_result_event.clear()
 
+        # Client requested an abort, but due to async behaviour we can still be executed.
+        if self._tracking_number == -1:
+            return
+
         await self._source.protocol.send_PACKET_COORDINATOR_GC_DIRECT_CONNECT(
             self._protocol_version, self.client_token, self._tracking_number, server_ip, server_port
         )
@@ -173,6 +177,10 @@ class TokenConnect:
     async def _connect_stun_connect(self, ip_type):
         self._connect_method = f"stun-{ip_type}"
         self._connect_result_event.clear()
+
+        # Client requested an abort, but due to async behaviour we can still be executed.
+        if self._tracking_number == -1:
+            return
 
         client_peer = self._stun_result["C"][ip_type]
         server_peer = self._stun_result["S"][ip_type]
@@ -197,6 +205,10 @@ class TokenConnect:
     async def _connect_turn_connect(self):
         self._connect_method = "turn"
         self._connect_result_event.clear()
+
+        # Client requested an abort, but due to async behaviour we can still be executed.
+        if self._tracking_number == -1:
+            return
 
         if self._protocol_version < 5 or not self._application.turn_servers:
             await self.connect_failed(self._tracking_number)
