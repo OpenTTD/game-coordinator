@@ -28,7 +28,8 @@ class Application:
         log.info("Starting TURN server for %s ...", _turn_address)
 
     async def startup(self):
-        asyncio.create_task(self._keep_turn_server_alive())
+        asyncio.create_task(self._guard(self._keep_turn_server_alive()))
+        asyncio.create_task(self._guard(self._update_stats()))
 
     async def shutdown(self):
         log.info("Shutting down TURN server ...")
@@ -45,6 +46,20 @@ class Application:
         source.peer.protocol.transport.close()
 
         asyncio.create_task(self.database.stats_turn_usage(source.total_bytes, time.time() - source.connected_since))
+        source.total_bytes = 0
+        source.connected_since = time.time()
+
+    async def _guard(self, coroutine):
+        try:
+            await coroutine
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("System co-routine failed, killing server ..")
+
+            import sys
+
+            sys.exit(1)
 
     async def _keep_turn_server_alive(self):
         # Update the redis key every 10 seconds. The TTL of the key is set at
@@ -52,17 +67,27 @@ class Application:
         # our deadline, redis will expire our key, which informs the cluster
         # we are no longer available for serving any request.
         while True:
-            try:
-                await self.database.announce_turn_server(self.turn_address)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("System co-routine failed, killing server ..")
-
-                import sys
-
-                sys.exit(1)
+            await self.database.announce_turn_server(self.turn_address)
             await asyncio.sleep(10)
+
+    async def _update_stats(self):
+        # On a regular interval, update the TURN usage based on the current
+        # active connections. This is especially useful for people who keep
+        # their connection open for days.
+        while True:
+            await asyncio.sleep(1800)
+
+            for source in list(self._active_sources):
+                if source.total_bytes == 0:
+                    continue
+
+                total_bytes = source.total_bytes
+                source.total_bytes = 0
+
+                connected_since = source.connected_since
+                source.connected_since = time.time()
+
+                await self.database.stats_turn_usage(total_bytes, time.time() - connected_since)
 
     async def receive_PACKET_TURN_SERCLI_CONNECT(self, source, protocol_version, ticket):
         if not await self.database.validate_turn_ticket(ticket):
