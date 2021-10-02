@@ -48,6 +48,12 @@ class Application:
     async def startup(self):
         await self.database.sync_and_monitor()
 
+    async def shutdown(self):
+        log.info("Shutting down Game Coordinator ...")
+
+        for server in self._servers.values():
+            server._source.protocol.transport.close()
+
     def disconnect(self, source):
         if hasattr(source, "server"):
             asyncio.create_task(self.remove_server(source.server.server_id))
@@ -195,7 +201,7 @@ class Application:
         for token in abort_tokens:
             await token.abort_attempt("server")
 
-        asyncio.create_task(self._servers[server_id].disconnect())
+        await self._servers[server_id].disconnect()
         del self._servers[server_id]
 
     async def gc_connect_failed(self, token, tracking_number):

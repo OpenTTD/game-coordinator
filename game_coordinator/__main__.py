@@ -1,6 +1,7 @@
 import asyncio
 import click
 import logging
+import signal
 
 from openttd_helpers import click_helper
 from openttd_helpers.logging_helper import click_logging
@@ -37,6 +38,27 @@ async def run_server(application, bind, port, ProtocolClass):
     log.info(f"Listening on {bind}:{port} ...")
 
     return server
+
+
+async def close_server(loop, app_instance, server):
+    # Stop accepting new connections.
+    server.close()
+    await server.wait_closed()
+
+    # Shut down the application, allowing it to do cleanup.
+    await app_instance.shutdown()
+
+    # Cancel all the remaining tasks and wait for them to have stopped.
+    tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+    for task in tasks:
+        task.cancel()
+
+    # Wait for all tasks to actually cancel.
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # We should now be able to stop the loop safely.
+    log.info("Server gracefully shut down")
+    loop.stop()
 
 
 @click_helper.command()
@@ -93,13 +115,11 @@ def main(bind, app, coordinator_port, stun_port, turn_port, web_port, db, proxy_
 
     server = loop.run_until_complete(run_server(app_instance, bind, port, protocol))
 
-    try:
-        start_webserver(bind, web_port, db_instance)
-    except KeyboardInterrupt:
-        pass
+    loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.ensure_future(close_server(loop, app_instance, server)))
+    loop.add_signal_handler(signal.SIGINT, lambda: asyncio.ensure_future(close_server(loop, app_instance, server)))
 
-    log.info("Shutting down game_coordinator ...")
-    server.close()
+    start_webserver(bind, web_port, db_instance)
+    loop.run_forever()
 
 
 if __name__ == "__main__":

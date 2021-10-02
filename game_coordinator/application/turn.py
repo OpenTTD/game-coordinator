@@ -23,20 +23,28 @@ class Application:
 
         self._ticket_pair = {}
         self._ticket_task = {}
+        self._active_sources = set()
 
         log.info("Starting TURN server for %s ...", _turn_address)
 
+    async def startup(self):
+        asyncio.create_task(self._keep_turn_server_alive())
+
+    async def shutdown(self):
+        log.info("Shutting down TURN server ...")
+
+        for source in self._active_sources:
+            source.protocol.transport.close()
+
     def disconnect(self, source):
-        if not hasattr(source, "peer"):
+        if source not in self._active_sources:
             return
+        self._active_sources.remove(source)
 
         # Make sure we close the other side too.
         source.peer.protocol.transport.close()
 
         asyncio.create_task(self.database.stats_turn_usage(source.total_bytes, time.time() - source.connected_since))
-
-    async def startup(self):
-        asyncio.create_task(self._keep_turn_server_alive())
 
     async def _keep_turn_server_alive(self):
         # Update the redis key every 10 seconds. The TTL of the key is set at
@@ -79,6 +87,9 @@ class Application:
         # Match the pair together.
         source.peer = self._ticket_pair[ticket]
         self._ticket_pair[ticket].peer = source
+
+        self._active_sources.add(source)
+        self._active_sources.add(source.peer)
 
         # Inform both parties we are now relaying.
         await source.protocol.send_PACKET_TURN_TURN_CONNECTED(protocol_version, str(self._ticket_pair[ticket].ip))

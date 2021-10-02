@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from aiohttp import web
@@ -49,4 +50,10 @@ def start_webserver(bind, web_port, db_instance):
     webapp = web.Application()
     webapp.add_routes(routes)
 
-    web.run_app(webapp, host=bind, port=web_port, access_log_class=ErrorOnlyAccessLogger)
+    # aiohttp normally takes over all kind of asyncio function, especially on
+    # shutdown. But we need to be in control of the shutdown to ensure it is
+    # done graceful. This means we need to call an internal aiohttp function
+    # to prevent the asyncio setup aiohttp normally does.
+    asyncio.ensure_future(
+        web._run_app(webapp, host=bind, port=web_port, access_log_class=ErrorOnlyAccessLogger, handle_signals=False)
+    )
