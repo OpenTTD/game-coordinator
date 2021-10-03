@@ -26,7 +26,8 @@ class TokenConnect:
         self._given_up = False
 
     def delete_client_token(self):
-        del self._source.client.connections[self._server.server_id]
+        if self._source.client.connections[self._server.server_id] == self:
+            del self._source.client.connections[self._server.server_id]
 
     async def connect(self):
         self._tracking_number = 1
