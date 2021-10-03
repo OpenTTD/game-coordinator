@@ -52,6 +52,8 @@ class Application:
         log.info("Shutting down Game Coordinator ...")
 
         for server in self._servers.values():
+            if isinstance(server, ServerExternal):
+                continue
             server._source.protocol.transport.close()
 
     def disconnect(self, source):
