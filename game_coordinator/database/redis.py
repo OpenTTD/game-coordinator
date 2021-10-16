@@ -10,6 +10,7 @@ import time
 from aioredis import ResponseError
 
 from openttd_helpers import click_helper
+from openttd_protocol import tracer
 
 log = logging.getLogger(__name__)
 
@@ -104,24 +105,28 @@ class Database:
                 if message["type"] != "message":
                     continue
 
-                if message["data"].startswith("turn-server:"):
-                    _, _, turn_server = message["data"].partition(":")
+                with tracer.tracer("db.expire-handler"):
+                    if message["data"].startswith("turn-server:"):
+                        tracer.add_context({"command": "expire.turn-server"})
+                        _, _, turn_server = message["data"].partition(":")
 
-                    await self.application.remove_turn_server(turn_server)
+                        await self.application.remove_turn_server(turn_server)
 
-                if message["data"].startswith("gc-newgrf:"):
-                    _, _, grfid_md5sum = message["data"].partition(":")
-                    grfid, _, md5sum = grfid_md5sum.partition("-")
+                    if message["data"].startswith("gc-newgrf:"):
+                        tracer.add_context({"command": "expire.gc-newgrf"})
+                        _, _, grfid_md5sum = message["data"].partition(":")
+                        grfid, _, md5sum = grfid_md5sum.partition("-")
 
-                    await self.application.remove_newgrf_from_table(grfid, md5sum)
+                        await self.application.remove_newgrf_from_table(grfid, md5sum)
 
-                if message["data"].startswith("gc-server:"):
-                    _, _, server_id = message["data"].partition(":")
+                    if message["data"].startswith("gc-server:"):
+                        tracer.add_context({"command": "expire.gc-server"})
+                        _, _, server_id = message["data"].partition(":")
 
-                    await self._redis.delete(f"gc-direct-ipv4:{server_id}")
-                    await self._redis.delete(f"gc-direct-ipv6:{server_id}")
+                        await self._redis.delete(f"gc-direct-ipv4:{server_id}")
+                        await self._redis.delete(f"gc-direct-ipv6:{server_id}")
 
-                    await self.application.remove_server(server_id)
+                        await self.application.remove_server(server_id)
 
     async def _scan_existing_servers(self):
         turn_servers = await self._redis.keys("turn-server:*")
@@ -236,12 +241,15 @@ class Database:
                     log.error("Internal error: saw unknown entry on stream: %r", entry)
                     continue
 
-                proc = lookup_table.get(entry["type"])
-                if proc is None:
-                    log.error("Internal error: saw unknown type on stream: %s", entry["type"])
-                    continue
-                payload = json.loads(entry["payload"])
-                await proc(**payload)
+                with tracer.tracer("db.stream-handler"):
+                    tracer.add_context({"command": f"dbstream.{entry['type']}"})
+
+                    proc = lookup_table.get(entry["type"])
+                    if proc is None:
+                        log.error("Internal error: saw unknown type on stream: %s", entry["type"])
+                        continue
+                    payload = json.loads(entry["payload"])
+                    await proc(**payload)
 
     def get_server_id(self):
         return int(self._gc_id)
@@ -251,13 +259,16 @@ class Database:
             "gc-stream", {"gc-id": self._gc_id, "type": entry_type, "payload": json.dumps(payload)}, maxlen=1000
         )
 
+    @tracer.traced("redis")
     async def announce_turn_server(self, connection_string):
         if await self._redis.set(f"turn-server:{connection_string}", 1, ex=TTL_TURN_SERVER):
             await self.add_to_stream("turn-server", {"connection_string": connection_string})
 
+    @tracer.traced("redis")
     async def newgrf_in_use(self, newgrf):
         await self._redis.expire(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}", TTL_NEWGRF)
 
+    @tracer.traced("redis")
     async def newgrf_assign_index(self, newgrf):
         newgrf_lookup_str = await self._redis.get(f"gc-newgrf:{newgrf['grfid']}-{newgrf['md5sum']}")
         if newgrf_lookup_str is not None:
@@ -302,14 +313,17 @@ class Database:
         await self.newgrf_in_use(newgrf)
         return newgrf_lookup["index"]
 
+    @tracer.traced("redis")
     async def update_newgrf(self, server_id, newgrfs_indexed):
         await self._redis.set(f"gc-server-newgrf:{server_id}", json.dumps(newgrfs_indexed), ex=TTL_SERVER)
         await self.add_to_stream("update-newgrf", {"server_id": server_id, "newgrfs_indexed": newgrfs_indexed})
 
+    @tracer.traced("redis")
     async def update_info(self, server_id, info):
         await self._redis.set(f"gc-server:{server_id}", json.dumps(info), ex=TTL_SERVER)
         await self.add_to_stream("update", {"server_id": server_id, "info": info})
 
+    @tracer.traced("redis")
     async def direct_ip(self, server_id, server_ip, server_port):
         # Keep track of the IP this server has.
         type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
@@ -321,6 +335,7 @@ class Database:
                 "new-direct-ip", {"server_id": server_id, "type": type, "ip": str(server_ip), "port": server_port}
             )
 
+    @tracer.traced("redis")
     async def server_offline(self, server_id):
         await self._redis.delete(f"gc-direct-ipv4:{server_id}")
         await self._redis.delete(f"gc-direct-ipv6:{server_id}")
@@ -328,9 +343,11 @@ class Database:
         await self._redis.delete(f"gc-server-newgrf:{server_id}")
         await self.add_to_stream("delete", {"server_id": server_id})
 
+    @tracer.traced("redis")
     async def stats_verify(self, connection_type_name):
         await self._stats("verify", connection_type_name)
 
+    @tracer.traced("redis")
     async def stats_connect(self, method_name, result, final=True):
         if result:
             # Successful connections are always final.
@@ -342,13 +359,16 @@ class Database:
 
         await self._stats(key, method_name)
 
+    @tracer.traced("redis")
     async def stats_listing(self, game_info_version, openttd_version):
         await self._stats("listing", game_info_version)
         await self._stats("listing-version", openttd_version)
 
+    @tracer.traced("redis")
     async def stats_turn(self, side):
         await self._stats("turn", side)
 
+    @tracer.traced("redis")
     async def stats_turn_usage(self, total_bytes, time_connected):
         await self._stats("turn", "bytes", amount=total_bytes)
         await self._stats("turn", "time", amount=int(time_connected))
@@ -363,6 +383,7 @@ class Database:
         await self._redis.expire(key, TTL_STATS)
         await self._redis.incr(key, amount)
 
+    @tracer.traced("redis")
     async def get_stats(self, key):
         result = {}
 
@@ -378,6 +399,7 @@ class Database:
 
         return result
 
+    @tracer.traced("redis")
     async def create_turn_ticket(self):
         while True:
             ticket_left = secrets.token_hex(8)
@@ -387,11 +409,13 @@ class Database:
 
         return f"{ticket_left}:{ticket_right}"
 
+    @tracer.traced("redis")
     async def validate_turn_ticket(self, ticket):
         ticket_left, ticket_right = ticket.split(":")
         validation = await self._redis.get(f"turn-ticket:{ticket_left}")
         return validation == ticket_right
 
+    @tracer.traced("redis")
     async def stun_result(self, token, interface_number, peer_ip, peer_port):
         await self.add_to_stream(
             "stun-result",
@@ -404,6 +428,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def gc_connect_failed(self, token, tracking_number):
         await self.add_to_stream(
             "gc-connect-failed",
@@ -413,6 +438,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def gc_stun_result(self, prefix, token, interface_number, result):
         await self.add_to_stream(
             "gc-stun-result",
@@ -424,6 +450,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def send_server_stun_request(self, server_id, protocol_version, token):
         await self.add_to_stream(
             "send-stun-request",
@@ -434,6 +461,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def send_server_stun_connect(
         self, server_id, protocol_version, token, tracking_number, interface_number, peer_ip, peer_port
     ):
@@ -450,6 +478,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def send_server_turn_connect(
         self, server_id, protocol_version, token, tracking_number, ticket, connection_string
     ):
@@ -465,6 +494,7 @@ class Database:
             },
         )
 
+    @tracer.traced("redis")
     async def send_server_connect_failed(self, server_id, protocol_version, token):
         await self.add_to_stream(
             "send-connect-failed",

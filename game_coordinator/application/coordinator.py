@@ -29,6 +29,8 @@ _shared_secret = None
 
 
 class Application:
+    name = "coordinator"
+
     def __init__(self, database):
         if not _shared_secret:
             raise Exception("Please set --shared-secret for this application")

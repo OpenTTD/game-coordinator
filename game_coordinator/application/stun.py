@@ -4,6 +4,8 @@ log = logging.getLogger(__name__)
 
 
 class Application:
+    name = "stun"
+
     def __init__(self, database):
         self.database = database
 
