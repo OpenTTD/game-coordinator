@@ -28,52 +28,68 @@ TRACES_PER_HOUR = 100
 TRACES_SAMPLE_RATE = 10
 
 log = logging.getLogger(__name__)
+
+# Current active samples.
 samples = {}
-samples_length = [0, 0]
-samples_bucket = [0.0]
+# Bucket for the amount of allowed samples to go out.
+samples_bucket = 0.0
+# Window-based stats about how many samples were send and how many were there
+# in total. Used to estimate the sample rate.
+samples_accepted = [0] * 60
+samples_total = [0] * 60
 
 
 def beeline_sampler(event):
+    global samples_bucket, samples_skipped
+
     trace_id = event["trace.trace_id"]
 
     # New trace. Check if we want to sample it.
     if trace_id not in samples:
-        # Count how many new traces we have seen.
-        samples_length[0] += 1
+        samples_total[0] += 1
+        samples[trace_id] = False
 
         # Check if we can send this trace.
-        if samples_bucket[0] > 0 and random.randint(1, TRACES_SAMPLE_RATE) == 1:
-            samples_bucket[0] -= 1
+        if samples_bucket > 1 and random.randint(1, TRACES_SAMPLE_RATE) == 1:
+            samples_bucket -= 1
+            samples_accepted[0] += 1
 
             samples[trace_id] = True
-            samples_length[1] += 1
-        else:
-            samples[trace_id] = False
 
     # Calculate the result and sample-rate.
     result = samples[trace_id]
-    sample_rate = samples_length[1] / samples_length[0]
+    sample_rate = sum(samples_total) // sum(samples_accepted) if result else 0
 
     # This trace is closing. So forget any information about it.
     if event["trace.parent_id"] is None:
         del samples[trace_id]
-        samples_length[0] -= 1
-        if result:
-            samples_length[1] -= 1
 
     return result, sample_rate
 
 
 async def fill_samples_bucket():
+    global samples_bucket
+
+    count = 0
+
     # Every five seconds, fill the bucket a bit, so we can sample randomly
     # during the hour.
+    # Every minute, move the window of samples_accepted / sample_total.
     while True:
         await asyncio.sleep(5)
-        samples_bucket[0] += TRACES_PER_HOUR * 5 / 3600
 
-        # Ensure we never allow more than an hour of samples going out at once.
-        if samples_bucket[0] > TRACES_PER_HOUR:
-            samples_bucket[0] = TRACES_PER_HOUR
+        # Don't overflow the bucket past the size of an hour.
+        if samples_bucket < TRACES_PER_HOUR:
+            samples_bucket += TRACES_PER_HOUR * 5 / 3600
+
+        # Update the samples-stats every minute.
+        count += 1
+        if count > 60 / 5:
+            count = 0
+
+            # Move the window of the samples-stats.
+            samples_accepted[:] = [0] + samples_accepted[:-1]
+            samples_total[:] = [0] + samples_total[:-1]
 
 
 async def run_server(application, bind, port, ProtocolClass, honeycomb_api_key):
@@ -175,8 +191,8 @@ def main(
 ):
     global TRACES_PER_HOUR, TRACES_SAMPLE_RATE
 
-    TRACES_PER_HOUR = honeycomb_rate_limit
-    TRACES_SAMPLE_RATE = honeycomb_sample_rate
+    TRACES_PER_HOUR = int(honeycomb_rate_limit)
+    TRACES_SAMPLE_RATE = int(honeycomb_sample_rate)
 
     loop = asyncio.get_event_loop()
 
