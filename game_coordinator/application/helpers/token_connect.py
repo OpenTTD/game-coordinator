@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 
+from openttd_protocol import tracer
 from openttd_protocol.wire.exceptions import SocketClosed
 
 log = logging.getLogger(__name__)
@@ -25,10 +26,12 @@ class TokenConnect:
         self._timeout_task = None
         self._given_up = False
 
+    @tracer.traced("token-connect")
     def delete_client_token(self):
         if self._source.client.connections[self._server.server_id] == self:
             del self._source.client.connections[self._server.server_id]
 
+    @tracer.traced("token-connect")
     async def connect(self):
         self._tracking_number = 1
         self._connect_result_event = asyncio.Event()
@@ -51,6 +54,7 @@ class TokenConnect:
         self._connect_task = asyncio.create_task(self._connect_guard())
         self._timeout_task = asyncio.create_task(self._timeout())
 
+    @tracer.traced("token-connect")
     async def connected(self):
         self._given_up = True
         self._connect_task.cancel()
@@ -60,9 +64,11 @@ class TokenConnect:
 
         await self._application.database.stats_connect(self._connect_method, True)
 
+    @tracer.traced("token-connect")
     async def abort_attempt(self, reason):
         asyncio.create_task(self._connect_give_up(f"abort-{reason}"))
 
+    @tracer.traced("token-connect")
     async def connect_failed(self, tracking_number):
         if tracking_number == 0:
             # Client requested we stop with this connection attempt. So clean it up!
@@ -83,6 +89,7 @@ class TokenConnect:
         self._tracking_number += 1
         self._connect_result_event.set()
 
+    @tracer.traced("token-connect")
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
         if peer_type == "ipv6":
             peer_ip = f"[{peer_ip}]"
@@ -99,6 +106,7 @@ class TokenConnect:
             # Both sides reported all their STUN results. Inform _connect().
             self._stun_pairs.put_nowait(None)
 
+    @tracer.traced("token-connect")
     async def stun_result_concluded(self, prefix, interface_number, result):
         if result:
             # Successful STUN results will call stun_result() eventually too.
@@ -109,7 +117,10 @@ class TokenConnect:
             # Both sides reported all their STUN results. Inform _connect().
             self._stun_pairs.put_nowait(None)
 
+    @tracer.untraced
     async def _timeout(self):
+        tracer.add_context({"command": "connect.timeout"})
+
         try:
             await asyncio.sleep(TIMEOUT)
 
@@ -121,7 +132,11 @@ class TokenConnect:
         except Exception:
             log.exception("Exception during _timeout()")
 
+    @tracer.untraced
+    @tracer.traced("token-connect")
     async def _connect_guard(self):
+        tracer.add_context({"command": "connect.connect"})
+
         try:
             await self._connect()
         except asyncio.CancelledError:
@@ -136,6 +151,7 @@ class TokenConnect:
 
         self._connect_task = None
 
+    @tracer.traced("token-connect")
     async def _connect(self):
         # Try connecting via direct-IPs first.
         for direct_ip in self._server.direct_ips:
@@ -164,6 +180,7 @@ class TokenConnect:
         # There are no more methods.
         asyncio.create_task(self._connect_give_up("out-of-methods"))
 
+    @tracer.traced("token-connect")
     async def _connect_direct_connect(self, server_ip, server_port):
         ip_type = "ipv6" if server_ip.startswith("[") else "ipv4"
         self._connect_method = f"direct-{ip_type}"
@@ -177,10 +194,12 @@ class TokenConnect:
             self._protocol_version, self.client_token, self._tracking_number, server_ip, server_port
         )
 
+    @tracer.traced("token-connect")
     async def _connect_stun_request(self):
         await self._source.protocol.send_PACKET_COORDINATOR_GC_STUN_REQUEST(self._protocol_version, self.client_token)
         await self._server.send_stun_request(self._protocol_version, self.server_token)
 
+    @tracer.traced("token-connect")
     async def _connect_stun_connect(self, ip_type):
         self._connect_method = f"stun-{ip_type}"
         self._connect_result_event.clear()
@@ -209,6 +228,7 @@ class TokenConnect:
             client_peer[2],
         )
 
+    @tracer.traced("token-connect")
     async def _connect_turn_connect(self):
         self._connect_method = "turn"
         self._connect_result_event.clear()
@@ -240,6 +260,7 @@ class TokenConnect:
             connection_string,
         )
 
+    @tracer.traced("token-connect")
     async def _connect_give_up(self, failure_reason):
         # Because we are async, it can happen more than one way suggests we
         # should give up. For example, a user sends a "stop", but directly
