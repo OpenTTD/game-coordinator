@@ -107,20 +107,20 @@ class Database:
 
                 with tracer.tracer("db.expire-handler"):
                     if message["data"].startswith("turn-server:"):
-                        tracer.add_context({"command": "expire.turn-server"})
+                        tracer.add_trace_field("command", "expire.turn-server")
                         _, _, turn_server = message["data"].partition(":")
 
                         await self.application.remove_turn_server(turn_server)
 
                     if message["data"].startswith("gc-newgrf:"):
-                        tracer.add_context({"command": "expire.gc-newgrf"})
+                        tracer.add_trace_field("command", "expire.gc-newgrf")
                         _, _, grfid_md5sum = message["data"].partition(":")
                         grfid, _, md5sum = grfid_md5sum.partition("-")
 
                         await self.application.remove_newgrf_from_table(grfid, md5sum)
 
                     if message["data"].startswith("gc-server:"):
-                        tracer.add_context({"command": "expire.gc-server"})
+                        tracer.add_trace_field("command", "expire.gc-server")
                         _, _, server_id = message["data"].partition(":")
 
                         await self._redis.delete(f"gc-direct-ipv4:{server_id}")
@@ -242,7 +242,7 @@ class Database:
                     continue
 
                 with tracer.tracer("db.stream-handler"):
-                    tracer.add_context({"command": f"dbstream.{entry['type']}"})
+                    tracer.add_trace_field("command", f"dbstream.{entry['type']}")
 
                     proc = lookup_table.get(entry["type"])
                     if proc is None:
