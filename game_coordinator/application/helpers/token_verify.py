@@ -101,7 +101,7 @@ class TokenVerify:
     @tracer.untraced
     @tracer.traced("token-verify")
     async def _start_detection(self, interface_number, server_ip):
-        tracer.add_context({"command": "verify.start"})
+        tracer.add_trace_field("command", "verify.start")
 
         try:
             await asyncio.wait_for(self._create_connection(server_ip, self._server.server_port), TIMEOUT_DIRECT_CONNECT)
@@ -135,7 +135,7 @@ class TokenVerify:
     @tracer.untraced
     @tracer.traced("token-verify")
     async def _conclude_detection(self):
-        tracer.add_context({"command": "verify.conclude"})
+        tracer.add_trace_field("command", "verify.conclude")
 
         try:
             await asyncio.wait_for(self._stun_done_event.wait(), TIMEOUT_VERIFY)

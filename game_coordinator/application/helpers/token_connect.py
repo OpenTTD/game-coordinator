@@ -119,7 +119,7 @@ class TokenConnect:
 
     @tracer.untraced
     async def _timeout(self):
-        tracer.add_context({"command": "connect.timeout"})
+        tracer.add_trace_field("command", "connect.timeout")
 
         try:
             await asyncio.sleep(TIMEOUT)
@@ -135,7 +135,7 @@ class TokenConnect:
     @tracer.untraced
     @tracer.traced("token-connect")
     async def _connect_guard(self):
-        tracer.add_context({"command": "connect.connect"})
+        tracer.add_trace_field("command", "connect.connect")
 
         try:
             await self._connect()

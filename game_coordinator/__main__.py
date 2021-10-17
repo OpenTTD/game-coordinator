@@ -1,8 +1,6 @@
 import asyncio
-import beeline
 import click
 import logging
-import random
 import signal
 
 from openttd_helpers import click_helper
@@ -22,87 +20,13 @@ from .application.turn import (
     click_application_turn,
 )
 from .database.redis import click_database_redis
+from .tracer import click_tracer
 from .web import start_webserver
-
-TRACES_PER_HOUR = 100
-TRACES_SAMPLE_RATE = 10
 
 log = logging.getLogger(__name__)
 
-# Current active samples.
-samples = {}
-# Bucket for the amount of allowed samples to go out.
-samples_bucket = 0.0
-# Window-based stats about how many samples were send and how many were there
-# in total. Used to estimate the sample rate.
-samples_accepted = [0] * 60
-samples_total = [0] * 60
 
-
-def beeline_sampler(event):
-    global samples_bucket, samples_skipped
-
-    trace_id = event["trace.trace_id"]
-
-    # New trace. Check if we want to sample it.
-    if trace_id not in samples:
-        samples_total[0] += 1
-        samples[trace_id] = False
-
-        # Check if we can send this trace.
-        if samples_bucket > 1 and random.randint(1, TRACES_SAMPLE_RATE) == 1:
-            samples_bucket -= 1
-            samples_accepted[0] += 1
-
-            samples[trace_id] = True
-
-    # Calculate the result and sample-rate.
-    result = samples[trace_id]
-    sample_rate = sum(samples_total) // sum(samples_accepted) if result else 0
-
-    # This trace is closing. So forget any information about it.
-    if event["trace.parent_id"] is None:
-        del samples[trace_id]
-
-    return result, sample_rate
-
-
-async def fill_samples_bucket():
-    global samples_bucket
-
-    count = 0
-
-    # Every five seconds, fill the bucket a bit, so we can sample randomly
-    # during the hour.
-    # Every minute, move the window of samples_accepted / sample_total.
-    while True:
-        await asyncio.sleep(5)
-
-        # Don't overflow the bucket past the size of an hour.
-        if samples_bucket < TRACES_PER_HOUR:
-            samples_bucket += TRACES_PER_HOUR * 5 / 3600
-
-        # Update the samples-stats every minute.
-        count += 1
-        if count > 60 / 5:
-            count = 0
-
-            # Move the window of the samples-stats.
-            samples_accepted[:] = [0] + samples_accepted[:-1]
-            samples_total[:] = [0] + samples_total[:-1]
-
-
-async def run_server(application, bind, port, ProtocolClass, honeycomb_api_key):
-    if honeycomb_api_key:
-        beeline.init(
-            writekey=honeycomb_api_key,
-            dataset="game-coordinator",
-            service_name=application.name,
-            sampler_hook=beeline_sampler,
-        )
-        asyncio.create_task(fill_samples_bucket())
-        log.info("Honeycomb beeline initialized")
-
+async def run_server(application, bind, port, ProtocolClass):
     loop = asyncio.get_event_loop()
 
     server = await loop.create_server(
@@ -141,13 +65,7 @@ async def close_server(loop, app_instance, server):
 @click_helper.command()
 @click_logging  # Should always be on top, as it initializes the logging
 @click_sentry
-@click.option("--honeycomb-api-key", help="Honeycomb API key.")
-@click.option(
-    "--honeycomb-rate-limit", help="How many traces to send to Honeycomb per hour.", default=100, show_default=True
-)
-@click.option(
-    "--honeycomb-sample-rate", help="The sample rate of traces to send to Honeycomb.", default=10, show_default=True
-)
+@click_tracer
 @click.option(
     "--bind", help="The IP to bind the server to", multiple=True, default=["::1", "127.0.0.1"], show_default=True
 )
@@ -177,9 +95,6 @@ async def close_server(loop, app_instance, server):
 @click_application_coordinator
 @click_application_turn
 def main(
-    honeycomb_api_key,
-    honeycomb_rate_limit,
-    honeycomb_sample_rate,
     bind,
     app,
     coordinator_port,
@@ -189,11 +104,6 @@ def main(
     db,
     proxy_protocol,
 ):
-    global TRACES_PER_HOUR, TRACES_SAMPLE_RATE
-
-    TRACES_PER_HOUR = int(honeycomb_rate_limit)
-    TRACES_SAMPLE_RATE = int(honeycomb_sample_rate)
-
     loop = asyncio.get_event_loop()
 
     db_instance = db()
@@ -214,7 +124,7 @@ def main(
         port = stun_port
         protocol = StunProtocol
 
-    server = loop.run_until_complete(run_server(app_instance, bind, port, protocol, honeycomb_api_key))
+    server = loop.run_until_complete(run_server(app_instance, bind, port, protocol))
 
     loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.ensure_future(close_server(loop, app_instance, server)))
     loop.add_signal_handler(signal.SIGINT, lambda: asyncio.ensure_future(close_server(loop, app_instance, server)))
