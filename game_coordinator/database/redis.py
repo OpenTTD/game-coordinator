@@ -98,7 +98,7 @@ class Database:
             log.warning("Couldn't set configuration setting 'notify-keyspace-events' to 'Ex'. Please do this manually.")
 
         channel = self._redis.pubsub()
-        await channel.subscribe("__keyevent@0__:expired")
+        await channel.subscribe(f"__keyevent@{self._redis.connection_pool.connection_kwargs.get('db', 0)}__:expired")
 
         while True:
             async for message in channel.listen():
