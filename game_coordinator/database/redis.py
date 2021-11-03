@@ -117,7 +117,7 @@ class Database:
                         _, _, grfid_md5sum = message["data"].partition(":")
                         grfid, _, md5sum = grfid_md5sum.partition("-")
 
-                        await self.application.remove_newgrf_from_table(grfid, md5sum)
+                        await self.application.remove_newgrf_from_table(int(grfid), md5sum)
 
                     if message["data"].startswith("gc-server:"):
                         tracer.add_trace_field("command", "expire.gc-server")
