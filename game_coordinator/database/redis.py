@@ -249,7 +249,12 @@ class Database:
                         log.error("Internal error: saw unknown type on stream: %s", entry["type"])
                         continue
                     payload = json.loads(entry["payload"])
-                    await proc(**payload)
+                    try:
+                        await proc(**payload)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        log.exception("Command on stream caused exception")
 
     def get_server_id(self):
         return int(self._gc_id)
