@@ -16,7 +16,7 @@ openttd-helpers==1.0.1
 openttd-protocol==1.4.1
 pproxy==2.7.8
 requests==2.28.1
-sentry-sdk==1.6.0
+sentry-sdk==1.7.2
 six==1.16.0
 statsd==3.3.0
 typing_extensions==4.3.0
