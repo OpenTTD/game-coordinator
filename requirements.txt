@@ -12,7 +12,7 @@ honeycomb-beeline==3.4.1
 idna==3.3
 libhoney==2.1.1
 multidict==6.0.2
-openttd-helpers==1.0.1
+openttd-helpers==1.1.0
 openttd-protocol==1.4.1
 pproxy==2.7.8
 requests==2.28.1
