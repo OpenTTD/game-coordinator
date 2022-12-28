@@ -4,9 +4,9 @@
 [![GitHub Tag](https://img.shields.io/github/v/tag/OpenTTD/game-coordinator?include_prereleases&label=stable)](https://github.com/OpenTTD/game-coordinator/releases)
 [![GitHub commits since latest release](https://img.shields.io/github/commits-since/OpenTTD/game-coordinator/latest/main)](https://github.com/OpenTTD/game-coordinator/commits/main)
 
-[![GitHub Workflow Status (Testing)](https://img.shields.io/github/workflow/status/OpenTTD/game-coordinator/Testing/main?label=main)](https://github.com/OpenTTD/game-coordinator/actions?query=workflow%3ATesting)
-[![GitHub Workflow Status (Publish Image)](https://img.shields.io/github/workflow/status/OpenTTD/game-coordinator/Publish%20image?label=publish)](https://github.com/OpenTTD/game-coordinator/actions?query=workflow%3A%22Publish+image%22)
-[![GitHub Workflow Status (Deployments)](https://img.shields.io/github/workflow/status/OpenTTD/game-coordinator/Deployment?label=deployment)](https://github.com/OpenTTD/game-coordinator/actions?query=workflow%3A%22Deployment%22)
+[![GitHub Workflow Status (Testing)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/testing.yml?branch=main&label=main)](https://github.com/OpenTTD/game-coordinator/actions/workflows/testing.yml)
+[![GitHub Workflow Status (Publish Image)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/publish.yml?label=publish)](https://github.com/OpenTTD/game-coordinator/actions/workflows/publish.yml)
+[![GitHub Workflow Status (Deployments)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/deployment.yml?label=deployment)](https://github.com/OpenTTD/game-coordinator/actions/workflows/deployment.yml)
 
 [![GitHub deployments (Staging)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/staging?label=staging)](https://github.com/OpenTTD/game-coordinator/deployments)
 [![GitHub deployments (Production)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/production?label=production)](https://github.com/OpenTTD/game-coordinator/deployments)
