@@ -7,6 +7,7 @@ from openttd_helpers import click_helper
 from openttd_protocol.protocol.coordinator import (
     ConnectionType,
     NetworkCoordinatorErrorType,
+    ServerGameType,
 )
 
 from .helpers.client import Client
@@ -26,6 +27,13 @@ log = logging.getLogger(__name__)
 
 _socks_proxy = None
 _shared_secret = None
+
+# List of words that result in your server not being listed.
+# This to counter server-owners who use our server-listing as advertisement
+# platform. Yes. This was really happening.
+BLACKLISTED_SERVER_NAMES = [
+    "elitegameservers.net",
+]
 
 
 class Application:
@@ -278,6 +286,16 @@ class Application:
     async def receive_PACKET_COORDINATOR_SERVER_UPDATE(
         self, source, protocol_version, newgrf_serialization_type, newgrfs, **info
     ):
+        # If the server-name is blacklisted, change the game-type to invite-only.
+        # This way, everyone that knows about the server can still use it, but
+        # it will no longer be publicly listed.
+        # And yes, this was sadly enough needed, as some server-owners decided
+        # to use our server-listing as advertisement platform.
+        server_name = info["name"].lower()
+        for blacklisted_server_name in BLACKLISTED_SERVER_NAMES:
+            if blacklisted_server_name in server_name:
+                source.server.game_type = ServerGameType.SERVER_GAME_TYPE_INVITE_ONLY
+
         await source.server.update_newgrf(newgrf_serialization_type, newgrfs)
         await source.server.update(info)
 
