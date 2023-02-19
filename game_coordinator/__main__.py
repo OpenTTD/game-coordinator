@@ -4,6 +4,7 @@ import logging
 import signal
 
 from openttd_helpers import click_helper
+from openttd_helpers.asyncio_helper import enable_strong_referenced_tasks
 from openttd_helpers.logging_helper import click_logging
 from openttd_helpers.sentry_helper import click_sentry
 
@@ -104,7 +105,10 @@ def main(
     db,
     proxy_protocol,
 ):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    enable_strong_referenced_tasks(loop)
 
     db_instance = db()
     app_instance = app(db_instance)
