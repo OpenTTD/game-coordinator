@@ -8,7 +8,7 @@ chardet==5.1.0
 charset-normalizer==2.1.1
 click==8.1.3
 frozenlist==1.3.3
-honeycomb-beeline==3.5.0
+honeycomb-beeline==3.5.1
 idna==3.4
 libhoney==2.3.0
 multidict==6.0.4
