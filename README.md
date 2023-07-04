@@ -1,15 +1,6 @@
 # Game Coordinator
 
 [![GitHub License](https://img.shields.io/github/license/OpenTTD/game-coordinator)](https://github.com/OpenTTD/game-coordinator/blob/main/LICENSE)
-[![GitHub Tag](https://img.shields.io/github/v/tag/OpenTTD/game-coordinator?include_prereleases&label=stable)](https://github.com/OpenTTD/game-coordinator/releases)
-[![GitHub commits since latest release](https://img.shields.io/github/commits-since/OpenTTD/game-coordinator/latest/main)](https://github.com/OpenTTD/game-coordinator/commits/main)
-
-[![GitHub Workflow Status (Testing)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/testing.yml?branch=main&label=main)](https://github.com/OpenTTD/game-coordinator/actions/workflows/testing.yml)
-[![GitHub Workflow Status (Publish Image)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/publish.yml?label=publish)](https://github.com/OpenTTD/game-coordinator/actions/workflows/publish.yml)
-[![GitHub Workflow Status (Deployments)](https://img.shields.io/github/actions/workflow/status/OpenTTD/game-coordinator/deployment.yml?label=deployment)](https://github.com/OpenTTD/game-coordinator/actions/workflows/deployment.yml)
-
-[![GitHub deployments (Staging)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/staging?label=staging)](https://github.com/OpenTTD/game-coordinator/deployments)
-[![GitHub deployments (Production)](https://img.shields.io/github/deployments/OpenTTD/game-coordinator/production?label=production)](https://github.com/OpenTTD/game-coordinator/deployments)
 
 This is the Game Coordinator / STUN server to assist in OpenTTD players to play together.
 
