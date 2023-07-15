@@ -21,7 +21,6 @@ from .application.turn import (
     click_application_turn,
 )
 from .database.redis import click_database_redis
-from .tracer import click_tracer
 from .web import start_webserver
 
 log = logging.getLogger(__name__)
@@ -66,7 +65,6 @@ async def close_server(loop, app_instance, server):
 @click_helper.command()
 @click_logging  # Should always be on top, as it initializes the logging
 @click_sentry
-@click_tracer
 @click.option(
     "--bind", help="The IP to bind the server to", multiple=True, default=["::1", "127.0.0.1"], show_default=True
 )

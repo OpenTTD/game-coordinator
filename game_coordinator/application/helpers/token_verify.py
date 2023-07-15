@@ -3,7 +3,6 @@ import ipaddress
 import logging
 import pproxy
 
-from openttd_protocol import tracer
 from openttd_protocol.protocol.coordinator import ConnectionType
 from openttd_protocol.protocol.game import GameProtocol
 from openttd_protocol.wire.exceptions import SocketClosed
@@ -48,7 +47,6 @@ class TokenVerify:
     def delete_client_token(self):
         pass
 
-    @tracer.traced("token-verify")
     async def connect(self):
         self._pending_detection_tasks = []
         self._stun_concluded = set()
@@ -65,7 +63,6 @@ class TokenVerify:
 
         self._conclude_task = asyncio.create_task(self._conclude_detection())
 
-    @tracer.traced("token-verify")
     async def abort_attempt(self, reason):
         self._conclude_task.cancel()
         for task in self._pending_detection_tasks:
@@ -75,7 +72,6 @@ class TokenVerify:
         await self._application.database.stats_verify("abort")
         self._application.delete_token(self.token)
 
-    @tracer.traced("token-verify")
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
         peer_ip = ipaddress.IPv6Address(peer_ip) if peer_type == "ipv6" else ipaddress.IPv4Address(peer_ip)
 
@@ -86,7 +82,6 @@ class TokenVerify:
         task = asyncio.create_task(self._start_detection(interface_number, peer_ip))
         self._pending_detection_tasks.append(task)
 
-    @tracer.traced("token-verify")
     async def stun_result_concluded(self, prefix, interface_number, result):
         if result:
             # Successful STUN results will call stun_result() eventually too.
@@ -98,11 +93,7 @@ class TokenVerify:
         if len(self._stun_concluded) == 2:
             self._stun_done_event.set()
 
-    @tracer.untraced
-    @tracer.traced("token-verify")
     async def _start_detection(self, interface_number, server_ip):
-        tracer.add_trace_field("command", "verify.start")
-
         try:
             await asyncio.wait_for(self._create_connection(server_ip, self._server.server_port), TIMEOUT_DIRECT_CONNECT)
 
@@ -132,11 +123,7 @@ class TokenVerify:
 
         self._pending_detection_tasks.remove(asyncio.current_task())
 
-    @tracer.untraced
-    @tracer.traced("token-verify")
     async def _conclude_detection(self):
-        tracer.add_trace_field("command", "verify.conclude")
-
         try:
             await asyncio.wait_for(self._stun_done_event.wait(), TIMEOUT_VERIFY)
         except asyncio.TimeoutError:
@@ -171,7 +158,6 @@ class TokenVerify:
 
         self._application.delete_token(self.token)
 
-    @tracer.traced("token-verify")
     async def _create_connection(self, server_ip, server_port):
         connected = asyncio.Event()
 
