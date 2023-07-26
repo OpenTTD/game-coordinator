@@ -1,7 +1,6 @@
 aiohttp
 aioredis
 click
-honeycomb-beeline
 sentry-sdk
 openttd-helpers
 openttd-protocol
