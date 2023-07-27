@@ -333,6 +333,9 @@ class Database:
         await self._redis.delete(f"gc-server-newgrf:{server_id}")
         await self.add_to_stream("delete", {"server_id": server_id})
 
+    async def ping(self):
+        await self._redis.ping()
+
     async def stats_verify(self, connection_type_name):
         await self._stats("verify", connection_type_name)
 
