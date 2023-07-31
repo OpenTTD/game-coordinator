@@ -8,7 +8,7 @@ HUMAN_ENCODE_BASE = len(HUMAN_ENCODE_CHARS)
 
 
 def human_encode(value):
-    if type(value) == str:
+    if type(value) is str:
         value = int.from_bytes(value, "big")
 
     result = ""
