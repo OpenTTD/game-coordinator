@@ -47,7 +47,11 @@ async def close_server(loop, app_instance, server):
     await server.wait_closed()
 
     # Shut down the application, allowing it to do cleanup.
-    await app_instance.shutdown()
+    try:
+        await app_instance.shutdown()
+    except Exception:
+        log.exception("Error while shutting down application")
+        # Despite the exception, continue on with the shutdown.
 
     # Cancel all the remaining tasks and wait for them to have stopped.
     tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]

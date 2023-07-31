@@ -24,6 +24,7 @@ class Application:
         self._ticket_pair = {}
         self._ticket_task = {}
         self._active_sources = set()
+        self._shutdown = None
 
         log.info("Starting TURN server for %s ...", _turn_address)
 
@@ -33,9 +34,18 @@ class Application:
 
     async def shutdown(self):
         log.info("Shutting down TURN server ...")
+        self._shutdown = asyncio.Event()
 
-        for source in self._active_sources:
-            source.protocol.transport.close()
+        # Wait till all relay sessions are terminated.
+        while self._active_sources:
+            log.info(f"{len(self._active_sources) // 2} active connections left, waiting ...")
+            # Update every disconnect and every 30s since last disconnect how we are doing.
+            self._shutdown.clear()
+            try:
+                await asyncio.wait_for(self._shutdown.wait(), 30)
+            except asyncio.TimeoutError:
+                # Timeout; print a message and continue.
+                pass
 
     def disconnect(self, source):
         if source not in self._active_sources:
@@ -48,6 +58,9 @@ class Application:
         asyncio.create_task(self.database.stats_turn_usage(source.total_bytes, time.time() - source.connected_since))
         source.total_bytes = 0
         source.connected_since = time.time()
+
+        if self._shutdown:
+            self._shutdown.set()
 
     async def _guard(self, coroutine):
         try:
