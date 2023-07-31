@@ -4,6 +4,11 @@ import logging
 import time
 
 from openttd_helpers import click_helper
+from prometheus_client import (
+    Counter,
+    Gauge,
+    Summary,
+)
 
 log = logging.getLogger(__name__)
 
@@ -14,12 +19,21 @@ _turn_address = None
 
 
 class Application:
+    NAME = "turn"
+
     def __init__(self, database):
         if not _turn_address:
             raise Exception("Please set --turn-address for this application")
 
         self.database = database
         self.turn_address = _turn_address
+
+        self.stats_turn_bytes = Summary("coordinator_turn_tcp_bytes", "Bytes relayed")
+        self.stats_turn_connections = Gauge(
+            "coordinator_turn_tcp_connections", "Amount of connections currently being relayed"
+        )
+        self.stats_turn_duration = Summary("coordinator_turn_tcp_duration", "How long the connection was established")
+        self.stats_turn_ticket = Counter("coordinator_turn_tcp_ticket", "Amount of tickets processed", ["reason"])
 
         self._ticket_pair = {}
         self._ticket_task = {}
@@ -30,7 +44,6 @@ class Application:
 
     async def startup(self):
         asyncio.create_task(self._guard(self._keep_turn_server_alive()))
-        asyncio.create_task(self._guard(self._update_stats()))
 
     async def shutdown(self):
         log.info("Shutting down TURN server ...")
@@ -50,14 +63,16 @@ class Application:
     def disconnect(self, source):
         if source not in self._active_sources:
             return
+
+        # Only do this administration on one side.
         self._active_sources.remove(source)
+        self._active_sources.remove(source.peer)
 
         # Make sure we close the other side too.
         source.peer.protocol.transport.close()
 
-        asyncio.create_task(self.database.stats_turn_usage(source.total_bytes, time.time() - source.connected_since))
-        source.total_bytes = 0
-        source.connected_since = time.time()
+        self.stats_turn_duration.observe(time.time() - source.connected_since)
+        self.stats_turn_connections.dec()
 
         if self._shutdown:
             self._shutdown.set()
@@ -79,43 +94,21 @@ class Application:
         # 15 seconds. If for what-ever reason we stop working, we will miss
         # our deadline, redis will expire our key, which informs the cluster
         # we are no longer available for serving any request.
-        while True:
+        while self._shutdown is None:
             await self.database.announce_turn_server(self.turn_address)
             await asyncio.sleep(10)
-
-    async def _update_stats(self):
-        # On a regular interval, update the TURN usage based on the current
-        # active connections. This is especially useful for people who keep
-        # their connection open for days.
-        while True:
-            await asyncio.sleep(1800)
-
-            for source in list(self._active_sources):
-                if source.total_bytes == 0:
-                    continue
-
-                total_bytes = source.total_bytes
-                source.total_bytes = 0
-
-                connected_since = source.connected_since
-                source.connected_since = time.time()
-
-                await self.database.stats_turn_usage(total_bytes, time.time() - connected_since)
 
     async def receive_PACKET_TURN_SERCLI_CONNECT(self, source, protocol_version, ticket):
         if not await self.database.validate_turn_ticket(ticket):
             source.protocol.transport.close()
-            await self.database.stats_turn("invalid")
+            self.stats_turn_ticket.labels(reason="invalid").inc()
             return
 
-        # Create variable to track bandwidth.
-        source.total_bytes = 0
         source.connected_since = time.time()
 
         if ticket not in self._ticket_pair:
             self._ticket_pair[ticket] = source
             self._ticket_task[ticket] = asyncio.create_task(self._expire_ticket(ticket))
-            await self.database.stats_turn("one-side")
             return
 
         # Found a pair; cancel the expire task.
@@ -132,7 +125,9 @@ class Application:
         # Inform both parties we are now relaying.
         await source.protocol.send_PACKET_TURN_TURN_CONNECTED(protocol_version, str(self._ticket_pair[ticket].ip))
         await self._ticket_pair[ticket].protocol.send_PACKET_TURN_TURN_CONNECTED(protocol_version, str(source.ip))
-        await self.database.stats_turn("two-sided")
+
+        self.stats_turn_ticket.labels(reason="paired").inc()
+        self.stats_turn_connections.inc()
 
         del self._ticket_pair[ticket]
 
@@ -140,6 +135,7 @@ class Application:
         await asyncio.sleep(TIMEOUT)
 
         self._ticket_pair[ticket].protocol.transport.close()
+        self.stats_turn_ticket.labels(reason="expired").inc()
 
         # Expire the ticket after 10 seconds if there was no match.
         del self._ticket_pair[ticket]
@@ -149,7 +145,7 @@ class Application:
         if not hasattr(source, "peer"):
             return False
 
-        source.total_bytes += len(data)
+        self.stats_turn_bytes.observe(len(data))
 
         # Send out all incoming packets to the other side.
         await source.peer.protocol.send_packet(data)

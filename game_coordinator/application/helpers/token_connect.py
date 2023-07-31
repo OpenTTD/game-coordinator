@@ -58,7 +58,7 @@ class TokenConnect:
         self._connect_task = None
         self._timeout_task = None
 
-        await self._application.database.stats_connect(self._connect_method, True)
+        return self._connect_method
 
     async def abort_attempt(self, reason):
         asyncio.create_task(self._connect_give_up(f"abort-{reason}"))
@@ -76,8 +76,6 @@ class TokenConnect:
         # while safely ignoring the other.
         if tracking_number != self._tracking_number:
             return
-
-        await self._application.database.stats_connect(self._connect_method, False, False)
 
         # Try the next attempt now.
         self._tracking_number += 1
@@ -270,6 +268,6 @@ class TokenConnect:
             # If the server already left, that is fine.
             pass
 
-        await self._application.database.stats_connect(failure_reason, False)
+        self._application.stats_coordinator_tcp_connect_result.labels(result=failure_reason).inc()
 
         self._application.delete_token(self.token)

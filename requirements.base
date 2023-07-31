@@ -4,4 +4,5 @@ click
 sentry-sdk
 openttd-helpers
 openttd-protocol
+prometheus-client
 pproxy

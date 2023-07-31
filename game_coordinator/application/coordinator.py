@@ -9,6 +9,11 @@ from openttd_protocol.protocol.coordinator import (
     NetworkCoordinatorErrorType,
     ServerGameType,
 )
+from prometheus_client import (
+    Counter,
+    Gauge,
+    Summary,
+)
 
 from .helpers.client import Client
 from .helpers.invite_code import (
@@ -37,11 +42,51 @@ BLACKLISTED_SERVER_NAMES = [
 
 
 class Application:
+    NAME = "coordinator"
+
     def __init__(self, database):
         if not _shared_secret:
             raise Exception("Please set --shared-secret for this application")
 
         log.info("Starting Game Coordinator ...")
+
+        self.stats_coordinator_tcp_register = Counter(
+            "coordinator_tcp_register", "Number of register requests", ["invite_code", "game_type"]
+        )
+        self.stats_coordinator_tcp_update = Counter("coordinator_tcp_update", "Number of update requests")
+        self.stats_coordinator_tcp_listing = Counter(
+            "coordinator_tcp_listing", "Number of listings requests", ["openttd_version"]
+        )
+        self.stats_coordinator_tcp_listing_bytes = Summary(
+            "coordinator_tcp_listing_bytes", "Bytes used for listings", ["openttd_version"]
+        )
+        self.stats_coordinator_tcp_listing_newgrf_bytes = Summary(
+            "coordinator_tcp_listing_newgrf_bytes", "Bytes used for listings newgrf table"
+        )
+        self.stats_coordinator_tcp_connect = Counter("coordinator_tcp_connect", "Number of connect requests")
+        self.stats_coordinator_tcp_connect_result = Counter(
+            "coordinator_tcp_connect_result", "Final result of connect request", ["result"]
+        )
+        self.stats_coordinator_tcp_connect_bytes = Summary("coordinator_tcp_connect_bytes", "Bytes used for connect")
+        self.stats_coordinator_tcp_connected = Counter(
+            "coordinator_tcp_connected", "Number of connected requests", ["method"]
+        )
+        self.stats_coordinator_tcp_connect_failed = Counter(
+            "coordinator_tcp_connect_failed", "Number of failed connect requests"
+        )
+        self.stats_coordinator_tcp_stun_result = Counter(
+            "coordinator_tcp_stun_result", "Number of STUN results requests"
+        )
+        self.stats_coordinator_tcp_verify_result = Counter(
+            "coordinator_tcp_verify_result", "Final result of verify request", ["result"]
+        )
+        self.stats_coordinator_tcp_verify_result_direct = Counter(
+            "coordinator_tcp_verify_result_direct", "Final result of verify request with result=direct", ["ip_type"]
+        )
+        self.stats_coordinator_connections = Gauge(
+            "coordinator_tcp_connections", "Amount of connections currently active"
+        )
+        self.stats_coordinator_servers = Gauge("coordinator_tcp_servers", "Amount of servers currently active")
 
         self._shared_secret = _shared_secret
         self.database = database
@@ -64,7 +109,12 @@ class Application:
                 continue
             server._source.protocol.transport.close()
 
+    def connected(self, source):
+        self.stats_coordinator_connections.inc()
+
     def disconnect(self, source):
+        self.stats_coordinator_connections.dec()
+
         if hasattr(source, "server"):
             asyncio.create_task(self.remove_server(source.server.server_id))
 
@@ -213,6 +263,7 @@ class Application:
 
         await self._servers[server_id].disconnect()
         del self._servers[server_id]
+        self.stats_coordinator_servers.dec()
 
     async def gc_connect_failed(self, token, tracking_number):
         token = self._tokens.get(token)
@@ -239,15 +290,21 @@ class Application:
             and invite_code[0] == "+"
             and validate_invite_code_secret(self._shared_secret, invite_code, invite_code_secret)
         ):
+            stats_invite_code = "reusing"
             # Invite code given is valid, so re-use it.
             server_id = invite_code
         else:
+            stats_invite_code = "new"
             while True:
                 server_id = generate_invite_code(self.database.get_server_id())
                 if server_id not in self._servers:
                     break
 
             invite_code_secret = generate_invite_code_secret(self._shared_secret, server_id)
+
+        self.stats_coordinator_tcp_register.labels(
+            invite_code=stats_invite_code, game_type=game_type.name[len("SERVER_GAME_TYPE_") :].lower()
+        ).inc()
 
         old_server_id = source.server.server_id if hasattr(source, "server") else None
 
@@ -270,6 +327,7 @@ class Application:
             )
 
         self._servers[source.server.server_id] = source.server
+        self.stats_coordinator_servers.inc()
 
         # Find an unused token.
         while True:
@@ -286,6 +344,8 @@ class Application:
     async def receive_PACKET_COORDINATOR_SERVER_UPDATE(
         self, source, protocol_version, newgrf_serialization_type, newgrfs, **info
     ):
+        self.stats_coordinator_tcp_update.inc()
+
         # If the server-name is blacklisted, change the game-type to invite-only.
         # This way, everyone that knows about the server can still use it, but
         # it will no longer be publicly listed.
@@ -302,10 +362,13 @@ class Application:
     async def receive_PACKET_COORDINATOR_CLIENT_LISTING(
         self, source, protocol_version, game_info_version, openttd_version, newgrf_lookup_table_cursor
     ):
+        self.stats_coordinator_tcp_listing.labels(openttd_version=openttd_version).inc()
+
         if protocol_version >= 4 and self._newgrf_lookup_table:
-            await source.protocol.send_PACKET_COORDINATOR_GC_NEWGRF_LOOKUP(
+            length = await source.protocol.send_PACKET_COORDINATOR_GC_NEWGRF_LOOKUP(
                 protocol_version, newgrf_lookup_table_cursor, self._newgrf_lookup_table
             )
+            self.stats_coordinator_tcp_listing_newgrf_bytes.observe(length)
 
         # Ensure servers matching "openttd_version" are at the top.
         servers_match = []
@@ -323,13 +386,17 @@ class Application:
             else:
                 servers_other.append(server)
 
-        await source.protocol.send_PACKET_COORDINATOR_GC_LISTING(
+        length = await source.protocol.send_PACKET_COORDINATOR_GC_LISTING(
             protocol_version, game_info_version, servers_match + servers_other, self._newgrf_lookup_table
         )
-        await self.database.stats_listing(game_info_version, openttd_version)
+        self.stats_coordinator_tcp_listing_bytes.labels(openttd_version=openttd_version).observe(length)
 
     async def receive_PACKET_COORDINATOR_CLIENT_CONNECT(self, source, protocol_version, invite_code):
+        self.stats_coordinator_tcp_connect.inc()
+
         if not invite_code or invite_code[0] != "+" or invite_code not in self._servers:
+            self.stats_coordinator_tcp_connect_result.labels(result="invalid-invite-code").inc()
+
             await source.protocol.send_PACKET_COORDINATOR_GC_ERROR(
                 protocol_version, NetworkCoordinatorErrorType.NETWORK_COORDINATOR_ERROR_INVALID_INVITE_CODE, invite_code
             )
@@ -357,10 +424,15 @@ class Application:
         self._tokens[token.token] = token
 
         # Inform client of token value, and start the connection attempt(s).
-        await source.protocol.send_PACKET_COORDINATOR_GC_CONNECTING(protocol_version, token.client_token, invite_code)
+        length = await source.protocol.send_PACKET_COORDINATOR_GC_CONNECTING(
+            protocol_version, token.client_token, invite_code
+        )
+        self.stats_coordinator_tcp_connect_bytes.observe(length)
         await token.connect()
 
     async def receive_PACKET_COORDINATOR_SERCLI_CONNECT_FAILED(self, source, protocol_version, token, tracking_number):
+        self.stats_coordinator_tcp_connect_failed.inc()
+
         if token[1:] not in self._tokens:
             if token[0] == "S":
                 # The server tells us information about a token we do not track.
@@ -379,12 +451,17 @@ class Application:
             return
 
         # Client and server are connected; clean the token.
-        await token.connected()
+        method = await token.connected()
         self.delete_token(token.token)
+
+        self.stats_coordinator_tcp_connect_result.labels(result="connected").inc()
+        self.stats_coordinator_tcp_connected.labels(method=method).inc()
 
     async def receive_PACKET_COORDINATOR_SERCLI_STUN_RESULT(
         self, source, protocol_version, token, interface_number, result
     ):
+        self.stats_coordinator_tcp_stun_result.inc()
+
         prefix = token[0]
         if token[1:] not in self._tokens:
             if token[0] == "S":

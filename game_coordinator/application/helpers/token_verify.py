@@ -69,7 +69,7 @@ class TokenVerify:
             if not task.done():
                 task.cancel()
 
-        await self._application.database.stats_verify("abort")
+        self._application.stats_coordinator_tcp_verify_result.labels(result=f"abort-{reason}").inc()
         self._application.delete_token(self.token)
 
     async def stun_result(self, prefix, interface_number, peer_type, peer_ip, peer_port):
@@ -106,7 +106,7 @@ class TokenVerify:
             await self._application.database.direct_ip(self._server.server_id, server_ip, self._server.server_port)
 
             ip_type = "ipv6" if isinstance(server_ip, ipaddress.IPv6Address) else "ipv4"
-            await self._application.database.stats_verify(f"direct-{ip_type}")
+            self._application.stats_coordinator_tcp_verify_result_direct.labels(ip_type=ip_type).inc()
         except asyncio.CancelledError:
             raise
         except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
@@ -149,12 +149,12 @@ class TokenVerify:
                 self._server.connection_type = ConnectionType.CONNECTION_TYPE_TURN
 
             await self._server.send_register_ack(self._protocol_version)
-            await self._application.database.stats_verify(
-                self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()
-            )
+            self._application.stats_coordinator_tcp_verify_result.labels(
+                result=self._server.connection_type.name[len("CONNECTION_TYPE_") :].lower()
+            ).inc()
         except SocketClosed:
             # Server already closed the connection, nothing to conclude.
-            await self._application.database.stats_verify("closed")
+            self._application.stats_coordinator_tcp_verify_result.labels(result="closed").inc()
 
         self._application.delete_token(self.token)
 

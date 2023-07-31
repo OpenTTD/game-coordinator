@@ -7,10 +7,13 @@ from openttd_helpers import click_helper
 from openttd_helpers.asyncio_helper import enable_strong_referenced_tasks
 from openttd_helpers.logging_helper import click_logging
 from openttd_helpers.sentry_helper import click_sentry
-
 from openttd_protocol.protocol.coordinator import CoordinatorProtocol
 from openttd_protocol.protocol.stun import StunProtocol
 from openttd_protocol.protocol.turn import TurnProtocol
+from prometheus_client import (
+    Info,
+    metrics,
+)
 
 from .application.coordinator import (
     Application as CoordinatorApplication,
@@ -24,6 +27,9 @@ from .database.redis import click_database_redis
 from .web import start_webserver
 
 log = logging.getLogger(__name__)
+
+# Disable the "_created" metrics, as they are not useful.
+metrics._use_created = False
 
 
 async def run_server(application, bind, port, ProtocolClass):
@@ -107,6 +113,10 @@ def main(
     db,
     proxy_protocol,
 ):
+    with open(".version") as f:
+        release = f.readline().strip()
+    Info("coordinator", "Game Coordinator").info({"version": release, "application": app.NAME})
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
