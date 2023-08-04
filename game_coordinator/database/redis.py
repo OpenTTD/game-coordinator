@@ -24,8 +24,6 @@ TTL_NEWGRF = TTL_SERVER + 60
 # GC claims are refreshed every 30 seconds, so after twice that, a GC has
 # crashed / exited and it can be reclaimed.
 TTL_GC_ID = 60
-# Keep statistics for 30 days.
-TTL_STATS = 3600 * 24 * 30
 # Slightly more than the interval the TURN server announce itself.
 TTL_TURN_SERVER = 15
 
@@ -335,56 +333,6 @@ class Database:
 
     async def ping(self):
         await self._redis.ping()
-
-    async def stats_verify(self, connection_type_name):
-        await self._stats("verify", connection_type_name)
-
-    async def stats_connect(self, method_name, result, final=True):
-        if result:
-            # Successful connections are always final.
-            key = "connect"
-        elif final:
-            key = "connect-failed"
-        else:
-            key = "connect-method-failed"
-
-        await self._stats(key, method_name)
-
-    async def stats_listing(self, game_info_version, openttd_version):
-        await self._stats("listing", game_info_version)
-        await self._stats("listing-version", openttd_version)
-
-    async def stats_turn(self, side):
-        await self._stats("turn", side)
-
-    async def stats_turn_usage(self, total_bytes, time_connected):
-        await self._stats("turn", "bytes", amount=total_bytes)
-        await self._stats("turn", "time", amount=int(time_connected))
-
-    async def _stats(self, key, subkey, amount=1):
-        # Put all stats of a single day in one bucket.
-        day_since_1970 = int(time.time()) // (3600 * 24)
-
-        key = f"stats-{key}:{day_since_1970}-{subkey}"
-
-        # Keep statistics for one month.
-        await self._redis.expire(key, TTL_STATS)
-        await self._redis.incr(key, amount)
-
-    async def get_stats(self, key):
-        result = {}
-
-        stats = await self._redis.keys(f"stats-{key}:*")
-        for stat in stats:
-            _, _, time_subkey = stat.partition(":")
-            day_since_1970, _, subkey = time_subkey.partition("-")
-
-            if day_since_1970 not in result:
-                result[day_since_1970] = {}
-
-            result[day_since_1970][subkey] = await self._redis.get(stat)
-
-        return result
 
     async def create_turn_ticket(self):
         while True:

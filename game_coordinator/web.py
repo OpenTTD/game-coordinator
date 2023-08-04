@@ -3,6 +3,10 @@ import logging
 
 from aiohttp import web
 from aiohttp.web_log import AccessLogger
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    generate_latest,
+)
 
 log = logging.getLogger(__name__)
 routes = web.RouteTableDef()
@@ -15,18 +19,13 @@ async def healthz_handler(request):
     return web.HTTPOk()
 
 
-@routes.get("/stats")
-async def stats_handler(request):
-    return web.json_response(
-        {
-            "verify": await DB_INSTANCE.get_stats("verify"),
-            "listing": await DB_INSTANCE.get_stats("listing"),
-            "listing-version": await DB_INSTANCE.get_stats("listing-version"),
-            "connect": await DB_INSTANCE.get_stats("connect"),
-            "connect-failed": await DB_INSTANCE.get_stats("connect-failed"),
-            "connect-method-failed": await DB_INSTANCE.get_stats("connect-method-failed"),
-            "turn": await DB_INSTANCE.get_stats("turn"),
-        }
+@routes.get("/metrics")
+async def metrics_handler(request):
+    return web.Response(
+        body=generate_latest(),
+        headers={
+            "Content-Type": CONTENT_TYPE_LATEST,
+        },
     )
 
 
