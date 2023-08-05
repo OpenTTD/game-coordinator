@@ -1,6 +1,7 @@
 aiohttp
 aioredis
 click
+hiredis
 sentry-sdk
 openttd-helpers
 openttd-protocol
