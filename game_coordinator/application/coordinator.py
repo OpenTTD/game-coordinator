@@ -263,7 +263,6 @@ class Application:
 
         await self._servers[server_id].disconnect()
         del self._servers[server_id]
-        self.stats_coordinator_servers.dec()
 
     async def gc_connect_failed(self, token, tracking_number):
         token = self._tokens.get(token)
@@ -327,7 +326,6 @@ class Application:
             )
 
         self._servers[source.server.server_id] = source.server
-        self.stats_coordinator_servers.inc()
 
         # Find an unused token.
         while True:
