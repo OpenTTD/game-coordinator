@@ -92,9 +92,11 @@ class Server:
         else:
             self.connection_string = f"{str(self._source.ip)}:{self.server_port}"
         self.connection_type = ConnectionType.CONNECTION_TYPE_ISOLATED
+        self._application.stats_coordinator_servers.inc()
 
     async def disconnect(self):
         await self._application.database.server_offline(self.server_id)
+        self._application.stats_coordinator_servers.dec()
 
     async def send_error_and_close(self, error_no, error_detail):
         try:
@@ -113,6 +115,7 @@ class Server:
         # Make sure disconnect() is not called on the object anymore.
         del self._source.server
         self._source.protocol.transport.abort()
+        self._application.stats_coordinator_servers.dec()
 
     async def update_newgrf(self, newgrf_serialization_type, newgrfs):
         if newgrfs is None:
