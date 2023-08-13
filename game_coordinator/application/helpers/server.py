@@ -99,6 +99,11 @@ class Server:
         self._application.stats_coordinator_servers.dec()
 
     async def send_error_and_close(self, error_no, error_detail):
+        # Make sure disconnect() is not called on the object anymore.
+        # As the client will close the connection too, it might arrive
+        # before we finish this function, so do this as early as possible.
+        del self._source.server
+
         try:
             await self._source.protocol.send_PACKET_COORDINATOR_GC_ERROR(
                 self._protocol_version,
@@ -112,8 +117,7 @@ class Server:
             # Socket already closed, so we can clean up the socket.
             pass
 
-        # Make sure disconnect() is not called on the object anymore.
-        del self._source.server
+        # Close transport from our side too.
         self._source.protocol.transport.abort()
         self._application.stats_coordinator_servers.dec()
 
