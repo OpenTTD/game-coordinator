@@ -13,7 +13,7 @@ multidict==6.0.5
 openttd-helpers==1.4.0
 openttd-protocol==1.7.1
 pproxy==2.7.9
-prometheus-client==0.20.0
+prometheus_client==0.20.0
 sentry-sdk==2.7.1
 typing_extensions==4.12.2
 urllib3==2.2.2
