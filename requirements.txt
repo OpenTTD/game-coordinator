@@ -14,7 +14,7 @@ openttd-helpers==1.4.0
 openttd-protocol==1.7.1
 pproxy==2.7.9
 prometheus_client==0.20.0
-sentry-sdk==2.7.1
+sentry-sdk==2.8.0
 typing_extensions==4.12.2
 urllib3==2.2.2
 yarl==1.9.4
