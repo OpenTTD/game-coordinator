@@ -1,5 +1,4 @@
 import asyncio
-import aioredis
 import click
 import ipaddress
 import json
@@ -7,7 +6,8 @@ import logging
 import secrets
 import time
 
-from aioredis import ResponseError
+from redis import asyncio as aioredis
+from redis import ResponseError
 
 from openttd_helpers import click_helper
 
