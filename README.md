@@ -6,13 +6,13 @@ This is the Game Coordinator / STUN server to assist in OpenTTD players to play 
 
 ## Development
 
-This server is written in Python 3.8 with aiohttp, and makes strong use of asyncio.
+This server is written in Python 3.11 with aiohttp, and makes strong use of asyncio.
 
 ### Running a local server
 
 #### Dependencies
 
-- Python3.8 or higher.
+- Python3.11 or higher.
 - Redis
 
 #### Preparing your venv
