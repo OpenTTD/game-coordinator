@@ -169,7 +169,7 @@ class TokenVerify:
             sock = writer.transport.get_extra_info("socket")
             server = await asyncio.get_event_loop().create_connection(
                 lambda: GameProtocol(DetectGame(connected)),
-                sock=sock,
+                sock=sock._sock,  # Sneak in the actual socket, not the wrapped version.
             )
         else:
             server = await asyncio.get_event_loop().create_connection(
