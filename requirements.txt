@@ -10,6 +10,7 @@ idna==3.20
 multidict==7.1.0
 openttd-helpers==2.0.0
 openttd-protocol==1.7.1
+packaging==26.3
 pproxy==2.7.9
 prometheus_client==0.26.0
 propcache==0.5.4
